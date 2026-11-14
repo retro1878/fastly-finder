@@ -23,8 +23,8 @@ Queries free passive/CT sources (`crt.sh` JSON + PostgreSQL `identities()`, Cert
 # Bulk-resolve top 50k Tranco domains (+ www.) + crt.sh Fastly shared/Certainly certs
 ./fastly-finder-linux-amd64 --global --seed tranco,ct-fastly --limit 50000 -o fastly_global.jsonl
 
-# Include Cisco Umbrella + Majestic Million
-./fastly-finder-linux-amd64 --global --seed tranco,umbrella,majestic,ct-fastly --limit 100000 --format csv -o fastly.csv
+# Include Chrome CrUX origins + ProjectDiscovery Chaos subdomains + deeper CT log tailing
+./fastly-finder-linux-amd64 --global --seed crux,chaos,ct-fastly --limit 100000 --ct-entries 20000 --format csv -o fastly.csv
 ```
 
 ### 3. Candidate list mode

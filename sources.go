@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/csv"
 	"encoding/json"
@@ -16,6 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -23,6 +25,8 @@ const (
 	trancoZipURL   = "https://tranco-list.eu/top-1m.csv.zip"
 	umbrellaZipURL = "http://s3-us-west-1.amazonaws.com/umbrella-static/top-1m.csv.zip"
 	majesticCSVURL = "https://downloads.majestic.com/majestic_million.csv"
+	cruxCSVGzURL   = "https://raw.githubusercontent.com/zakird/crux-top-lists/main/data/global/current.csv.gz"
+	chaosIndexURL  = "https://chaos-data.projectdiscovery.io/index.json"
 )
 
 // Candidate represents a normalized hostname and the free sources that discovered it.
@@ -38,6 +42,7 @@ type SourceOptions struct {
 	Global       bool
 	Seeds        []string
 	Limit        int
+	CTEntries    int
 	WithWWW      bool
 	UseSubfinder bool
 	CacheDir     string
@@ -400,18 +405,24 @@ func collectGlobal(ctx context.Context, client *http.Client, opts SourceOptions,
 			loadSeedZip(ctx, client, "umbrella", umbrellaZipURL, "umbrella_top1m.zip", 1, opts, store, false)
 		case "majestic":
 			loadMajestic(ctx, client, opts, store)
+		case "crux":
+			loadCrux(ctx, client, opts, store)
+		case "chaos":
+			loadChaos(ctx, client, opts, store)
 		case "ct-fastly":
 			collectGlobalCTFastly(ctx, client, opts, store)
 		case "ct-logs":
-			collectDirectCTLogs(ctx, client, 3000, opts, store)
+			collectDirectCTLogs(ctx, client, opts.CTEntries, opts, store)
 		case "all":
 			loadSeedZip(ctx, client, "tranco", trancoZipURL, "tranco_top1m.zip", 1, opts, store, true)
 			loadSeedZip(ctx, client, "umbrella", umbrellaZipURL, "umbrella_top1m.zip", 1, opts, store, false)
 			loadMajestic(ctx, client, opts, store)
+			loadCrux(ctx, client, opts, store)
+			loadChaos(ctx, client, opts, store)
 			collectGlobalCTFastly(ctx, client, opts, store)
 		default:
 			if opts.Logf != nil {
-				opts.Logf("unknown global seed %q (supported: tranco, umbrella, majestic, ct-fastly, ct-logs, all)", s)
+				opts.Logf("unknown global seed %q (supported: tranco, umbrella, majestic, crux, chaos, ct-fastly, ct-logs, all)", s)
 			}
 		}
 	}
@@ -464,6 +475,150 @@ func loadMajestic(ctx context.Context, client *http.Client, opts SourceOptions, 
 	}
 }
 
+func loadCrux(ctx context.Context, client *http.Client, opts SourceOptions, store *candidateStore) {
+	data, err := fetchOrReadCache(ctx, client, cruxCSVGzURL, opts.CacheDir, "crux_current.csv.gz", 7*24*time.Hour, opts.Refresh, 64<<20)
+	if err != nil {
+		if opts.Logf != nil {
+			opts.Logf("[crux] fetch failed: %v", err)
+		}
+		return
+	}
+	count, err := parseCruxGzip(bytes.NewReader(data), opts.Limit, store)
+	if err != nil {
+		if opts.Logf != nil {
+			opts.Logf("[crux] parse failed: %v", err)
+		}
+		return
+	}
+	if opts.Logf != nil {
+		opts.Logf("[crux] loaded %d origin hosts", count)
+	}
+}
+
+func parseCruxGzip(r io.Reader, limit int, store *candidateStore) (int, error) {
+	gzr, err := gzip.NewReader(r)
+	if err != nil {
+		return 0, err
+	}
+	defer gzr.Close()
+	return parseCSVHosts(gzr, 0, true, limit, "crux", false, store), nil
+}
+
+type chaosEntry struct {
+	Name  string `json:"name"`
+	URL   string `json:"URL"`
+	Count int    `json:"count"`
+}
+
+func loadChaos(ctx context.Context, client *http.Client, opts SourceOptions, store *candidateStore) {
+	idxBytes, err := fetchOrReadCache(ctx, client, chaosIndexURL, opts.CacheDir, "chaos_index.json", 7*24*time.Hour, opts.Refresh, 16<<20)
+	if err != nil {
+		if opts.Logf != nil {
+			opts.Logf("[chaos] index fetch failed: %v", err)
+		}
+		return
+	}
+	var entries []chaosEntry
+	if err := json.Unmarshal(idxBytes, &entries); err != nil {
+		if opts.Logf != nil {
+			opts.Logf("[chaos] index parse failed: %v", err)
+		}
+		return
+	}
+
+	jobs := make(chan chaosEntry, 16)
+	var total atomic.Int64
+	var zipsUsed atomic.Int64
+	limit := opts.Limit
+	var wg sync.WaitGroup
+
+	for w := 0; w < 4; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for e := range jobs {
+				if ctx.Err() != nil {
+					return
+				}
+				if limit > 0 && int(total.Load()) >= limit {
+					return
+				}
+				zipBytes, err := httpGetBytes(ctx, client, e.URL, 32<<20)
+				if err != nil {
+					continue
+				}
+				remain := 0
+				if limit > 0 {
+					remain = limit - int(total.Load())
+					if remain <= 0 {
+						return
+					}
+				}
+				added := parseChaosZip(zipBytes, remain, store)
+				if added > 0 {
+					total.Add(int64(added))
+					zipsUsed.Add(1)
+				}
+			}
+		}()
+	}
+
+	go func() {
+		defer close(jobs)
+		for _, e := range entries {
+			if e.URL == "" || e.Count == 0 {
+				continue
+			}
+			if limit > 0 && int(total.Load()) >= limit {
+				return
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case jobs <- e:
+			}
+		}
+	}()
+
+	wg.Wait()
+	if opts.Logf != nil {
+		opts.Logf("[chaos] loaded %d subdomains across %d Chaos archives", total.Load(), zipsUsed.Load())
+	}
+}
+
+func parseChaosZip(data []byte, limit int, store *candidateStore) int {
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return 0
+	}
+	added := 0
+	for _, f := range zr.File {
+		if !strings.HasSuffix(strings.ToLower(f.Name), ".txt") {
+			continue
+		}
+		rc, err := f.Open()
+		if err != nil {
+			continue
+		}
+		sc := bufio.NewScanner(rc)
+		sc.Buffer(make([]byte, 32*1024), 1024*1024)
+		for sc.Scan() {
+			h := NormalizeHost(sc.Text())
+			if h == "" {
+				continue
+			}
+			store.add(h, "chaos")
+			added++
+			if limit > 0 && added >= limit {
+				rc.Close()
+				return added
+			}
+		}
+		rc.Close()
+	}
+	return added
+}
+
 func parseCSVHosts(r io.Reader, colIdx int, hasHeader bool, limit int, source string, addWWW bool, store *candidateStore) int {
 	cr := csv.NewReader(r)
 	cr.FieldsPerRecord = -1
@@ -506,10 +661,10 @@ func collectGlobalCTFastly(ctx context.Context, client *http.Client, opts Source
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		collectDirectCTLogs(ctx, client, 3000, opts, store)
+		collectDirectCTLogs(ctx, client, opts.CTEntries, opts, store)
 	}()
 
-	// 2. Shared Fastly SSL certs carrying global.ssl.fastly.net in SANs (crt.sh SQL + HTTP JSON fallback).
+	// 2. Shared Fastly SSL certs carrying Fastly delivery suffixes in SANs (crt.sh SQL + HTTP JSON).
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -519,32 +674,45 @@ FROM certificate c
 WHERE to_tsquery('certwatch', 'global.ssl.fastly.net') @@ identities(c.certificate)
   AND coalesce(x509_notAfter(c.certificate), 'infinity'::timestamp) >= now()
 LIMIT 2000;`
+		sqlOK := false
 		if rows, err := queryCrtshPostgres(ctx, qShared, 30*time.Second); err == nil {
+			sqlOK = true
 			n := addCrtshRows(rows, "crt.sh-shared", store)
 			if opts.Logf != nil {
 				opts.Logf("[ct-fastly] shared-cert SQL SANs: +%d hosts", n)
 			}
-			return
 		} else if opts.Logf != nil {
 			opts.Logf("[ct-fastly] shared-cert SQL: %v (trying crt.sh JSON)", err)
 		}
 
-		if entries, err := fetchCrtshJSON(ctx, client, "global.ssl.fastly.net"); err == nil {
-			n := 0
+		sharedQueries := []string{"sni.global.fastly.net", "map.fastly.net", "fastlylb.net"}
+		if !sqlOK {
+			sharedQueries = append([]string{"global.ssl.fastly.net"}, sharedQueries...)
+		}
+		totalJSON := 0
+		for _, qName := range sharedQueries {
+			if ctx.Err() != nil {
+				break
+			}
+			entries, err := fetchCrtshJSON(ctx, client, qName)
+			if err != nil {
+				if opts.Logf != nil && opts.Verbose {
+					opts.Logf("[ct-fastly] shared-cert JSON (%s): %v", qName, err)
+				}
+				continue
+			}
 			for _, raw := range entries {
 				for _, item := range strings.Split(raw, "\n") {
 					h := NormalizeHost(item)
 					if h != "" && !IsFastlyCNAME(h) {
 						store.add(h, "crt.sh-shared-json")
-						n++
+						totalJSON++
 					}
 				}
 			}
-			if opts.Logf != nil {
-				opts.Logf("[ct-fastly] shared-cert JSON SANs: +%d hosts", n)
-			}
-		} else if opts.Logf != nil {
-			opts.Logf("[ct-fastly] shared-cert JSON: %v", err)
+		}
+		if opts.Logf != nil {
+			opts.Logf("[ct-fastly] shared-cert JSON SANs: +%d hosts", totalJSON)
 		}
 	}()
 

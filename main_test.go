@@ -1,6 +1,9 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -271,5 +274,38 @@ func TestParseCTEntryCert(t *testing.T) {
 	}
 	if len(cert.DNSNames) != 2 || cert.DNSNames[0] != "app.example.com" {
 		t.Fatalf("unexpected SANs: %+v", cert.DNSNames)
+	}
+}
+
+func TestCruxAndChaosParsers(t *testing.T) {
+	// CrUX gzip CSV
+	var gzBuf bytes.Buffer
+	gw := gzip.NewWriter(&gzBuf)
+	_, _ = gw.Write([]byte("origin,rank\nhttps://www.fastly.com,1000\nhttps://docs.example.com,10000\n"))
+	_ = gw.Close()
+
+	cruxStore := newCandidateStore()
+	n, err := parseCruxGzip(&gzBuf, 0, cruxStore)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 || len(cruxStore.sortedList()) != 2 {
+		t.Fatalf("expected 2 crux hosts, got n=%d list=%+v", n, cruxStore.sortedList())
+	}
+
+	// Chaos zip
+	var zipBuf bytes.Buffer
+	zw := zip.NewWriter(&zipBuf)
+	w, err := zw.Create("example.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = w.Write([]byte("cdn.example.com\nstatic.example.com\n"))
+	_ = zw.Close()
+
+	chaosStore := newCandidateStore()
+	added := parseChaosZip(zipBuf.Bytes(), 10, chaosStore)
+	if added != 2 || len(chaosStore.sortedList()) != 2 {
+		t.Fatalf("expected 2 chaos hosts, got added=%d list=%+v", added, chaosStore.sortedList())
 	}
 }

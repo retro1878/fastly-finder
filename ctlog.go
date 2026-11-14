@@ -24,9 +24,13 @@ type ctLogInfo struct {
 // and extracts DNS names from Certainly-issued certificates and Fastly shared SAN certs.
 func collectDirectCTLogs(ctx context.Context, client *http.Client, entriesPerLog int, opts SourceOptions, store *candidateStore) int {
 	if entriesPerLog <= 0 {
-		entriesPerLog = 2500
+		entriesPerLog = 3000
 	}
-	logs, err := fetchUsableCTLogs(ctx, client, 8)
+	maxLogs := 8
+	if entriesPerLog > 5000 {
+		maxLogs = 12
+	}
+	logs, err := fetchUsableCTLogs(ctx, client, maxLogs)
 	if err != nil {
 		if opts.Logf != nil {
 			opts.Logf("[ct-logs] log list fetch failed: %v", err)
@@ -107,7 +111,11 @@ func fetchUsableCTLogs(ctx context.Context, client *http.Client, maxLogs int) ([
 }
 
 func scanCTLogTail(ctx context.Context, client *http.Client, info ctLogInfo, count int, store *candidateStore) (scanned, matched, added int) {
-	logCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	timeout := 20*time.Second + time.Duration(count/500)*time.Second
+	if timeout > 5*time.Minute {
+		timeout = 5 * time.Minute
+	}
+	logCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	sthBody, err := httpGetBytes(logCtx, client, info.URL+"ct/v1/get-sth", 256<<10)
