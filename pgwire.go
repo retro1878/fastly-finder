@@ -40,7 +40,12 @@ func queryCrtshPostgres(ctx context.Context, sqlQuery string, timeout time.Durat
 		return nil, err
 	}
 	if sslResp[0] == 'S' {
-		tlsConn := tls.Client(conn, &tls.Config{ServerName: "crt.sh"})
+		// crt.sh:5432 is a public unauthenticated read-only DB (user=guest) whose Postgres TLS
+		// certificate expired in 2026-06; match psql's default sslmode=prefer (encrypt without CA/expiry check).
+		tlsConn := tls.Client(conn, &tls.Config{
+			ServerName:         "crt.sh",
+			InsecureSkipVerify: true,
+		})
 		if err := tlsConn.HandshakeContext(ctx); err != nil {
 			return nil, err
 		}
