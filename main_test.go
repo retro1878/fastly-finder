@@ -235,15 +235,23 @@ func TestParseCTEntryCert(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	parent := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "Certainly Intermediate R1", Organization: []string{"Certainly"}},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCertSign,
+	}
 	tmpl := &x509.Certificate{
-		SerialNumber: big.NewInt(1),
+		SerialNumber: big.NewInt(2),
 		Subject:      pkix.Name{CommonName: "app.example.com"},
-		Issuer:       pkix.Name{CommonName: "Certainly Intermediate R1", Organization: []string{"Certainly"}},
 		NotBefore:    time.Now().Add(-time.Hour),
 		NotAfter:     time.Now().Add(time.Hour),
 		DNSNames:     []string{"app.example.com", "cdn.example.com"},
 	}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, parent, &key.PublicKey, key)
 	if err != nil {
 		t.Fatal(err)
 	}
