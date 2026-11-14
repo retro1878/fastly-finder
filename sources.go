@@ -38,6 +38,7 @@ type Candidate struct {
 // SourceOptions configures candidate collection.
 type SourceOptions struct {
 	Domains      []string
+	DirectHosts  []string
 	InputFile    string
 	Global       bool
 	Seeds        []string
@@ -58,6 +59,12 @@ func CollectCandidates(ctx context.Context, client *http.Client, opts SourceOpti
 	if opts.InputFile != "" {
 		if err := loadCandidatesFromInput(opts.InputFile, store); err != nil {
 			return nil, err
+		}
+	}
+
+	for _, rawHost := range opts.DirectHosts {
+		if h := NormalizeHost(rawHost); h != "" {
+			store.add(h, "input")
 		}
 	}
 

@@ -37,6 +37,37 @@ Queries free passive/CT sources (`crt.sh` JSON + PostgreSQL `identities()`, Cert
 ./fastly-finder-linux-amd64 -d example.com --doh
 ```
 
+### 5. Readable terminal table vs machine-readable exports
+By default (`--format auto`), stdout on an interactive TTY renders an aligned table, while redirected output or `.jsonl` / `.csv` / `.txt` file extensions choose the matching format automatically. Override explicitly with `--format table|jsonl|csv|txt`.
+
+### 6. HTTPS-only authenticated Web Dashboard
+Start an interactive web dashboard embedded right inside the single binary (TLS + session cookie auth + CSRF protection + rate-limited login):
+
+```bash
+# Quick local/SSH-tunneled mode (generates random admin password + self-signed ECDSA cert):
+./fastly-finder-linux-amd64 --web 127.0.0.1:8443
+
+# With custom credentials and Certbot TLS cert (auto-reloads on renewal without restart):
+FASTLY_FINDER_WEB_AUTH='admin:your-strong-password' \
+  ./fastly-finder-linux-amd64 --web 0.0.0.0:8443 \
+  --web-cert /etc/fastly-finder/tls/cert.pem \
+  --web-key /etc/fastly-finder/tls/key.pem \
+  --web-dir /var/lib/fastly-finder/scans
+```
+
+### 7. One-command Linux systemd service installer (with optional Let's Encrypt IP cert)
+Install `fastly-finder` as an unprivileged `systemd` service with auto-generated credentials in `/etc/fastly-finder/env` and automatic scan storage in `/var/lib/fastly-finder/scans`:
+
+```bash
+# Self-signed HTTPS on port 8443:
+curl -fsSL https://raw.githubusercontent.com/retro1878/fastly-finder/master/install.sh | sudo bash
+
+# With a real Let's Encrypt short-lived IP certificate (6-day cert, auto-renewed by certbot.timer):
+curl -fsSL https://raw.githubusercontent.com/retro1878/fastly-finder/master/install.sh | sudo bash -s -- --certbot
+```
+
+> Port `8443` stays open for the HTTPS dashboard while port `80` remains free for Certbot `--standalone` challenges and automatic renewals. On renewal, a Certbot deploy hook updates `/etc/fastly-finder/tls/` and `fastly-finder` hot-reloads the certificate automatically.
+
 ## Status Classifications
 
 - `confirmed`: DNS matches Fastly (`*.fastly.net` / `*.fastlylb.net` / Fastly CIDR) and HTTP/edge probe sees Fastly headers (`X-Served-By: cache-...`, `Fastly-Debug-*`, `X-Timer`, `Via`) or a matching edge TLS cert.

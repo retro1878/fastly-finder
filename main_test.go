@@ -344,3 +344,146 @@ func TestWriteFindingsTableAndAutoFormat(t *testing.T) {
 		t.Fatalf("unexpected table output:\n%s", out)
 	}
 }
+
+func TestWebAuthTLSAndSandbox(t *testing.T) {
+	// 1. Credentials resolution
+	u, p, gen := resolveWebCredentials("ops:s3cr3t")
+	if u != "ops" || p != "s3cr3t" || gen {
+		t.Fatalf("unexpected explicit creds: %q %q %v", u, p, gen)
+	}
+	u, p, gen = resolveWebCredentials("onlypass")
+	if u != "admin" || p != "onlypass" || gen {
+		t.Fatalf("unexpected pass-only creds: %q %q %v", u, p, gen)
+	}
+	t.Setenv("FASTLY_FINDER_WEB_AUTH", "envu:envp")
+	u, p, gen = resolveWebCredentials("")
+	if u != "envu" || p != "envp" || gen {
+		t.Fatalf("expected env creds, got %q %q %v", u, p, gen)
+	}
+	t.Setenv("FASTLY_FINDER_WEB_AUTH", "")
+	u, p, gen = resolveWebCredentials("")
+	if u != "admin" || p == "" || !gen {
+		t.Fatalf("expected generated creds, got %q %q %v", u, p, gen)
+	}
+
+	// 2. Scan filename sandbox
+	dir := t.TempDir()
+	for _, bad := range []string{"", "../etc.jsonl", "sub/a.jsonl", "a.txt", ".."} {
+		if _, err := sanitizeScanFilename(dir, bad); err == nil {
+			t.Fatalf("expected error for %q", bad)
+		}
+	}
+	good, err := sanitizeScanFilename(dir, "scan_2026_test.jsonl")
+	if err != nil || good != filepath.Join(dir, "scan_2026_test.jsonl") {
+		t.Fatalf("expected valid path, got %q err=%v", good, err)
+	}
+
+	// 3. Login rate limiter
+	lim := newLoginLimiter()
+	ip := "1.2.3.4"
+	for i := 0; i < 5; i++ {
+		if !lim.allow(ip) {
+			t.Fatalf("expected allow before 5th failure (i=%d)", i)
+		}
+		lim.recordFailure(ip)
+	}
+	if lim.allow(ip) {
+		t.Fatalf("expected rate limit after 5 failures")
+	}
+	lim.reset(ip)
+	if !lim.allow(ip) {
+		t.Fatalf("expected allow after reset")
+	}
+
+	// 4. Self-signed ECDSA cert generation & reloader
+	certPath := filepath.Join(dir, "cert.pem")
+	keyPath := filepath.Join(dir, "key.pem")
+	cert1, err := loadOrCreateSelfSigned(certPath, keyPath)
+	if err != nil || len(cert1.Certificate) == 0 {
+		t.Fatalf("loadOrCreateSelfSigned failed: %v", err)
+	}
+	reloader, err := newCertReloader(certPath, keyPath)
+	if err != nil {
+		t.Fatalf("newCertReloader failed: %v", err)
+	}
+	if gotCert, gerr := reloader.getCertificate(nil); gerr != nil || gotCert == nil {
+		t.Fatalf("getCertificate failed: %v", gerr)
+	}
+
+	// 5. Auth + CSRF + Export HTTP handlers
+	ws := &webServer{
+		opts:     WebOptions{WebDir: dir},
+		authUser: "admin",
+		authPass: "topsecret",
+		hmacKey:  []byte("0123456789abcdef0123456789abcdef"),
+		limiter:  newLoginLimiter(),
+		state:    "idle",
+		counts:   make(map[string]int),
+		findings: []Finding{{Host: "cdn.example.com", Status: "confirmed", Sources: []string{"ct-log"}}},
+	}
+
+	// Unauthenticated /api/me -> 401
+	req := httptest.NewRequest(http.MethodGet, "/api/me", nil)
+	rec := httptest.NewRecorder()
+	ws.handleMe(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for unauth /api/me, got %d", rec.Code)
+	}
+
+	// Valid login -> sets HttpOnly Secure SameSite=Strict cookie
+	loginReq := httptest.NewRequest(http.MethodPost, "/api/login", strings.NewReader(`{"user":"admin","pass":"topsecret"}`))
+	loginReq.RemoteAddr = "127.0.0.1:50000"
+	loginRec := httptest.NewRecorder()
+	ws.handleLogin(loginRec, loginReq)
+	if loginRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on login, got %d (%s)", loginRec.Code, loginRec.Body.String())
+	}
+	cookies := loginRec.Result().Cookies()
+	if len(cookies) == 0 || cookies[0].Name != "ff_session" || !cookies[0].HttpOnly || !cookies[0].Secure {
+		t.Fatalf("expected secure HttpOnly ff_session cookie, got %+v", cookies)
+	}
+	sessCookie := cookies[0]
+
+	// Tampered cookie rejected
+	tampered := &http.Cookie{Name: "ff_session", Value: sessCookie.Value + "00"}
+	if ws.verifySession(tampered.Value) {
+		t.Fatalf("tampered session token should fail verification")
+	}
+
+	// Authenticated /api/me -> 200
+	meReq := httptest.NewRequest(http.MethodGet, "/api/me", nil)
+	meReq.AddCookie(sessCookie)
+	meRec := httptest.NewRecorder()
+	ws.handleMe(meRec, meReq)
+	if meRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for auth /api/me, got %d", meRec.Code)
+	}
+
+	// CSRF guard blocks missing X-Requested-With on POST action
+	csrfHandler := ws.requireAuth(ws.requireCSRF(ws.handleScanCancel))
+	noCSRFReq := httptest.NewRequest(http.MethodPost, "/api/scan/cancel", nil)
+	noCSRFReq.AddCookie(sessCookie)
+	noCSRFRec := httptest.NewRecorder()
+	csrfHandler(noCSRFRec, noCSRFReq)
+	if noCSRFRec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 without CSRF header, got %d", noCSRFRec.Code)
+	}
+
+	withCSRFReq := httptest.NewRequest(http.MethodPost, "/api/scan/cancel", nil)
+	withCSRFReq.AddCookie(sessCookie)
+	withCSRFReq.Header.Set("X-Requested-With", "fastly-finder")
+	withCSRFRec := httptest.NewRecorder()
+	csrfHandler(withCSRFRec, withCSRFReq)
+	if withCSRFRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 with CSRF header, got %d", withCSRFRec.Code)
+	}
+
+	// Export CSV
+	expReq := httptest.NewRequest(http.MethodGet, "/api/export?format=csv", nil)
+	expReq.AddCookie(sessCookie)
+	expRec := httptest.NewRecorder()
+	ws.requireAuth(ws.handleExport)(expRec, expReq)
+	if expRec.Code != http.StatusOK || !strings.Contains(expRec.Body.String(), "cdn.example.com") {
+		t.Fatalf("unexpected export response %d: %s", expRec.Code, expRec.Body.String())
+	}
+}

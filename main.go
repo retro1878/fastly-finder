@@ -8,7 +8,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -56,13 +55,19 @@ func run(args []string) int {
 		cacheDir        = fs.String("cache-dir", defaultCacheDir(), "cache directory for ranges and seed lists")
 		refresh         = fs.Bool("refresh", false, "force refresh of cached ranges and seed lists")
 		verbose         = fs.Bool("v", false, "verbose logging on stderr")
+		webAddr         = fs.String("web", "", "start HTTPS-only authenticated web dashboard on listen address (e.g. 127.0.0.1:8443 or :8443)")
+		webAuth         = fs.String("web-auth", "", "dashboard credentials user:pass (or FASTLY_FINDER_WEB_AUTH; random password generated if unset)")
+		webCert         = fs.String("web-cert", "", "TLS certificate PEM path for --web (or FASTLY_FINDER_WEB_CERT; supports live Certbot reload)")
+		webKey          = fs.String("web-key", "", "TLS private key PEM path for --web (or FASTLY_FINDER_WEB_KEY)")
+		webDir          = fs.String("web-dir", ".", "directory for saved/exported .jsonl files in the web dashboard")
 	)
 
 	fs.Usage = func() {
 		fmt.Fprintf(os.Stderr, "fastly-finder: free, zero-subscription Fastly CDN domain/subdomain discovery\n\nUsage:\n")
 		fmt.Fprintf(os.Stderr, "  fastly-finder -d example.com\n")
 		fmt.Fprintf(os.Stderr, "  fastly-finder --global --seed tranco,ct-fastly --limit 50000 -o fastly.jsonl\n")
-		fmt.Fprintf(os.Stderr, "  fastly-finder -i hosts.txt --format csv\n\nFlags:\n")
+		fmt.Fprintf(os.Stderr, "  fastly-finder -i hosts.txt --format csv\n")
+		fmt.Fprintf(os.Stderr, "  fastly-finder --web 127.0.0.1:8443\n\nFlags:\n")
 		fs.PrintDefaults()
 	}
 
@@ -73,37 +78,68 @@ func run(args []string) int {
 		return 2
 	}
 
-	if *domain == "" && *domainsFile == "" && *inputFile == "" && !*globalMode {
-		fs.Usage()
-		return 2
+	var seeds []string
+	for _, s := range strings.Split(*seedSpec, ",") {
+		if t := strings.TrimSpace(s); t != "" {
+			seeds = append(seeds, t)
+		}
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	baseCfg := ScanConfig{
+		Global:          *globalMode,
+		Seeds:           seeds,
+		Limit:           *limit,
+		CTEntries:       *ctEntries,
+		WithWWW:         *withWWW,
+		UseSubfinder:    *useSubfinder,
+		CIDRFile:        *cidrFile,
+		IncludeBGP:      *includeBGP,
+		IncludeUpcoming: *includeUpcoming,
+		Resolvers:       *resolversSpec,
+		UseDoH:          *useDoH,
+		DoHURL:          *dohURL,
+		QueryAAAA:       *queryAAAA,
+		DNSWorkers:      *dnsWorkers,
+		DNSTimeout:      *dnsTimeout,
+		SkipProbe:       *skipProbe,
+		ProbeAll:        *probeAll,
+		EdgeIP:          *edgeIP,
+		HTTPWorkers:     *httpWorkers,
+		HTTPTimeout:     *httpTimeout,
+		OnlyConfirmed:   *onlyConfirmed,
+		CacheDir:        *cacheDir,
+		Refresh:         *refresh,
+		Verbose:         *verbose,
+	}
+
+	if *webAddr != "" {
+		if err := RunWebServer(ctx, WebOptions{
+			Addr:     *webAddr,
+			Auth:     *webAuth,
+			CertFile: *webCert,
+			KeyFile:  *webKey,
+			WebDir:   *webDir,
+			CacheDir: *cacheDir,
+			BaseCfg:  baseCfg,
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "[!] web server error: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+
+	if *domain == "" && *domainsFile == "" && *inputFile == "" && !*globalMode {
+		fs.Usage()
+		return 2
+	}
+
 	logf := func(f string, a ...any) {
 		fmt.Fprintf(os.Stderr, "[*] "+f+"\n", a...)
 	}
 
-	httpClient := &http.Client{Timeout: 30 * time.Second}
-	start := time.Now()
-
-	// 1. Load Fastly IP ranges.
-	ranges, err := LoadRanges(ctx, httpClient, RangeOptions{
-		CIDRFile:        *cidrFile,
-		CacheDir:        *cacheDir,
-		IncludeBGP:      *includeBGP,
-		IncludeUpcoming: *includeUpcoming,
-		Refresh:         *refresh,
-	})
-	if err != nil {
-		logf("error loading Fastly ranges: %v", err)
-		return 1
-	}
-	v4c, v6c := ranges.Count()
-	logf("loaded Fastly ranges (%s): %d IPv4, %d IPv6 prefixes", ranges.Source, v4c, v6c)
-
-	// 2. Collect candidate hosts.
 	var targetDomains []string
 	if *domain != "" {
 		targetDomains = append(targetDomains, *domain)
@@ -116,91 +152,34 @@ func run(args []string) int {
 		}
 		targetDomains = append(targetDomains, loaded...)
 	}
+	baseCfg.Domains = targetDomains
+	baseCfg.InputFile = *inputFile
 
-	var seeds []string
-	for _, s := range strings.Split(*seedSpec, ",") {
-		if t := strings.TrimSpace(s); t != "" {
-			seeds = append(seeds, t)
+	var doneMsg string
+	outcome, err := RunScan(ctx, baseCfg, func(ev ScanEvent) {
+		if ev.Stage == "done" {
+			doneMsg = ev.Message
+			return
 		}
-	}
-
-	candidates, err := CollectCandidates(ctx, httpClient, SourceOptions{
-		Domains:      targetDomains,
-		InputFile:    *inputFile,
-		Global:       *globalMode,
-		Seeds:        seeds,
-		Limit:        *limit,
-		CTEntries:    *ctEntries,
-		WithWWW:      *withWWW,
-		UseSubfinder: *useSubfinder,
-		CacheDir:     *cacheDir,
-		Refresh:      *refresh,
-		Verbose:      *verbose,
-		Logf:         logf,
+		if ev.Total > 0 {
+			if ev.Stage == "dns" && !*verbose && ev.Total < 2000 {
+				return
+			}
+			if ev.Stage == "probe" && !*verbose && ev.Total < 100 {
+				return
+			}
+		}
+		if ev.Message != "" {
+			logf("%s", ev.Message)
+		}
 	})
 	if err != nil {
-		logf("error collecting candidates: %v", err)
+		logf("error: %v", err)
 		return 1
 	}
-	if len(candidates) == 0 {
+	if outcome.CandidatesCount == 0 {
 		logf("no valid candidate hostnames collected")
 		return 0
-	}
-	logf("collected %d unique candidate hostnames", len(candidates))
-
-	// 3. Bulk DNS resolution + CNAME/IP matching.
-	hostList := make([]string, len(candidates))
-	for i, c := range candidates {
-		hostList[i] = c.Host
-	}
-	dnsOpts := DNSOptions{
-		Resolvers: ParseResolvers(*resolversSpec),
-		UseDoH:    *useDoH,
-		DoHURL:    *dohURL,
-		QueryAAAA: *queryAAAA,
-		Workers:   *dnsWorkers,
-		Timeout:   *dnsTimeout,
-		Retries:   1,
-	}
-	dnsResults := ResolveAll(ctx, hostList, ranges, dnsOpts, httpClient, func(done, total int) {
-		if *verbose || total >= 2000 {
-			logf("dns progress: %d/%d", done, total)
-		}
-	})
-
-	fastlyDNSCount := 0
-	for _, r := range dnsResults {
-		if r.OnFastlyDNS {
-			fastlyDNSCount++
-		}
-	}
-	logf("DNS matched %d/%d hosts on Fastly CNAMEs/CIDRs", fastlyDNSCount, len(hostList))
-
-	// 4. Verify via Fastly-Debug headers + direct-IP SNI/Host probe.
-	findings := VerifyHosts(ctx, candidates, dnsResults, ProbeOptions{
-		Workers:  *httpWorkers,
-		Timeout:  *httpTimeout,
-		EdgeIP:   *edgeIP,
-		Skip:     *skipProbe,
-		ProbeAll: *probeAll,
-	}, func(done, total int) {
-		if *verbose || total >= 100 {
-			logf("probe progress: %d/%d", done, total)
-		}
-	})
-
-	// 5. Filter & write output.
-	var filtered []Finding
-	counts := make(map[string]int)
-	for _, f := range findings {
-		counts[f.Status]++
-		if *onlyConfirmed && f.Status != "confirmed" {
-			continue
-		}
-		if f.Status == "not_fastly" && !*probeAll {
-			continue
-		}
-		filtered = append(filtered, f)
 	}
 
 	var out io.Writer = os.Stdout
@@ -218,19 +197,13 @@ func run(args []string) int {
 	}
 
 	resolvedFmt := resolveOutputFormat(*format, *outFile, isTTY)
-	if err := writeFindings(out, resolvedFmt, filtered); err != nil {
+	if err := writeFindings(out, resolvedFmt, outcome.Findings); err != nil {
 		logf("error writing output: %v", err)
 		return 1
 	}
-
-	logf("done in %s | confirmed=%d headers_hidden=%d unknown_domain=%d unreachable=%d fastly_dns=%d",
-		time.Since(start).Round(time.Millisecond),
-		counts["confirmed"],
-		counts["fastly_dns_headers_hidden"],
-		counts["unknown_domain"],
-		counts["dns_only_unreachable"],
-		counts["fastly_dns"],
-	)
+	if doneMsg != "" {
+		logf("%s", doneMsg)
+	}
 	return 0
 }
 

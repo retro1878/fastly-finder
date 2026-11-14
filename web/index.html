@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>fastly-finder</title>
+<style>
+  :root{
+    --bg:#0b101b;--panel:#111827;--panel2:#172033;--border:#243047;
+    --text:#e5ecf6;--muted:#8b9bb4;--accent:#ff282d;--accent2:#ff5c60;
+    --ok:#22c55e;--warn:#f59e0b;--bad:#ef4444;--info:#38bdf8;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+    --sans:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.45}
+  .hidden{display:none!important}
+  header{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;background:var(--panel);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:20}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px}
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px var(--accent)}
+  .pill{font-size:11px;padding:2px 8px;border-radius:999px;background:var(--panel2);border:1px solid var(--border);color:var(--muted)}
+  .pill.ok{color:#86efac;border-color:#166534;background:#052e16}
+  .pill.warn{color:#fde68a;border-color:#854d0e;background:#291a03}
+  .pill.bad{color:#fca5a5;border-color:#991b1b;background:#2b0909}
+  .pill.info{color:#7dd3fc;border-color:#075985;background:#082235}
+  main{max-width:1360px;margin:0 auto;padding:18px;display:grid;gap:16px}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px}
+  h2{margin:0 0 12px;font-size:15px;font-weight:600;color:#f3f6fc}
+  .row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+  .col{display:flex;flex-direction:column;gap:6px;flex:1;min-width:180px}
+  label{font-size:12px;color:var(--muted)}
+  input[type=text],input[type=password],input[type=number],select,textarea{
+    background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:7px;
+    padding:8px 10px;font-family:inherit;font-size:13px;outline:none
+  }
+  input:focus,select:focus,textarea:focus{border-color:var(--info)}
+  textarea{min-height:86px;font-family:var(--mono);font-size:12px;resize:vertical}
+  button{
+    background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:7px;
+    padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;transition:.15s
+  }
+  button:hover:not(:disabled){border-color:#3b4f73;background:#1e293d}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  button.primary:hover:not(:disabled){background:var(--accent2)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .tabs{display:flex;gap:8px;margin-bottom:12px;border-bottom:1px solid var(--border);padding-bottom:10px}
+  .tab{background:transparent;border:1px solid transparent;color:var(--muted);padding:6px 12px}
+  .tab.active{background:var(--panel2);border-color:var(--border);color:var(--text)}
+  .checks{display:flex;flex-wrap:wrap;gap:10px}
+  .chk{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text);background:var(--bg);border:1px solid var(--border);padding:5px 10px;border-radius:7px;cursor:pointer;user-select:none}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+  .kpi{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px 14px}
+  .kpi .lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .kpi .val{font-size:22px;font-weight:700;margin-top:4px;font-family:var(--mono)}
+  .progress-wrap{height:8px;background:var(--bg);border-radius:999px;overflow:hidden;border:1px solid var(--border);margin:10px 0}
+  .progress-bar{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),#fb923c);transition:width .25s}
+  .logs{background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:10px;font-family:var(--mono);font-size:11.5px;max-height:140px;overflow:auto;color:#b6c3d8;white-space:pre-wrap}
+  .table-wrap{overflow:auto;border:1px solid var(--border);border-radius:8px;max-height:540px}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{padding:8px 10px;border-bottom:1px solid var(--border);text-align:left;white-space:nowrap}
+  th{background:var(--panel2);color:var(--muted);font-weight:600;position:sticky;top:0;z-index:5}
+  tbody tr{cursor:pointer}
+  tbody tr:hover{background:#162033}
+  .mono{font-family:var(--mono)}
+  #loginWrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+  #loginCard{width:100%;max-width:360px}
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;padding:20px;z-index:50}
+  .modal{background:var(--panel);border:1px solid var(--border);border-radius:10px;max-width:780px;width:100%;max-height:85vh;display:flex;flex-direction:column}
+  .modal-head{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border)}
+  .modal-body{padding:16px;overflow:auto}
+  pre{margin:0;background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:12px;font-family:var(--mono);font-size:12px;overflow:auto;white-space:pre-wrap;word-break:break-word}
+</style>
+</head>
+<body>
+
+<div id="loginWrap" class="hidden">
+  <div id="loginCard" class="card">
+    <div class="brand" style="margin-bottom:14px"><span class="dot"></span><span>fastly-finder</span><span class="pill ok">HTTPS</span></div>
+    <form id="loginForm" class="col">
+      <label for="loginUser">Username</label>
+      <input id="loginUser" type="text" autocomplete="username" value="admin" required>
+      <label for="loginPass">Password</label>
+      <input id="loginPass" type="password" autocomplete="current-password" required>
+      <div id="loginErr" style="color:#fca5a5;font-size:12px;min-height:16px"></div>
+      <button class="primary" type="submit">Sign In</button>
+    </form>
+  </div>
+</div>
+
+<div id="appWrap" class="hidden">
+  <header>
+    <div class="brand">
+      <span class="dot"></span>
+      <span>fastly-finder</span>
+      <span class="pill ok">HTTPS</span>
+      <span id="runStatePill" class="pill">idle</span>
+    </div>
+    <div class="row">
+      <span id="userLabel" class="pill"></span>
+      <button id="logoutBtn" type="button">Logout</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="card">
+      <div class="tabs">
+        <button type="button" class="tab active" data-mode="domain">Target Domain</button>
+        <button type="button" class="tab" data-mode="global">Global Discovery</button>
+        <button type="button" class="tab" data-mode="hosts">Host List</button>
+      </div>
+
+      <div id="panelDomain" class="col" style="margin-bottom:12px">
+        <label for="domainInput">Target domain(s), comma-separated</label>
+        <input id="domainInput" type="text" placeholder="reddit.com, fastly.com">
+      </div>
+
+      <div id="panelGlobal" class="hidden" style="margin-bottom:12px">
+        <label style="display:block;margin-bottom:6px">Free $0 Seeds</label>
+        <div class="checks" id="seedChecks" style="margin-bottom:12px">
+          <label class="chk"><input type="checkbox" value="crux" checked> crux</label>
+          <label class="chk"><input type="checkbox" value="chaos" checked> chaos</label>
+          <label class="chk"><input type="checkbox" value="tranco"> tranco</label>
+          <label class="chk"><input type="checkbox" value="umbrella"> umbrella</label>
+          <label class="chk"><input type="checkbox" value="majestic"> majestic</label>
+          <label class="chk"><input type="checkbox" value="ct-fastly" checked> ct-fastly</label>
+          <label class="chk"><input type="checkbox" value="ct-logs"> ct-logs</label>
+        </div>
+        <div class="row">
+          <div class="col" style="max-width:180px">
+            <label for="limitInput">Seed Limit (0 = all)</label>
+            <input id="limitInput" type="number" min="0" value="20000">
+          </div>
+          <div class="col" style="max-width:180px">
+            <label for="ctEntriesInput">CT Entries / Log</label>
+            <input id="ctEntriesInput" type="number" min="100" value="5000">
+          </div>
+        </div>
+      </div>
+
+      <div id="panelHosts" class="hidden col" style="margin-bottom:12px">
+        <label for="hostsInput">Candidate hostnames (one per line)</label>
+        <textarea id="hostsInput" placeholder="www.reddit.com&#10;docs.fastly.com"></textarea>
+      </div>
+
+      <div class="row" style="margin-bottom:12px">
+        <div class="col" style="max-width:150px">
+          <label for="dnsWorkersInput">DNS Workers</label>
+          <input id="dnsWorkersInput" type="number" min="1" max="1000" value="150">
+        </div>
+        <div class="col" style="max-width:150px">
+          <label for="httpWorkersInput">HTTP Workers</label>
+          <input id="httpWorkersInput" type="number" min="1" max="500" value="40">
+        </div>
+        <div class="checks" style="padding-top:16px">
+          <label class="chk"><input id="withWWWCheck" type="checkbox" checked> www. expand</label>
+          <label class="chk"><input id="dohCheck" type="checkbox"> DoH</label>
+          <label class="chk"><input id="bgpCheck" type="checkbox"> RIPEstat BGP</label>
+          <label class="chk"><input id="skipProbeCheck" type="checkbox"> DNS-only</label>
+          <label class="chk"><input id="onlyConfirmedCheck" type="checkbox"> Only confirmed</label>
+        </div>
+      </div>
+
+      <div class="row">
+        <button id="startBtn" class="primary" type="button">Start Scan</button>
+        <button id="cancelBtn" type="button" disabled>Cancel</button>
+        <span id="statusMsg" class="mono" style="font-size:12px;color:var(--muted)"></span>
+      </div>
+
+      <div class="progress-wrap"><div id="progressBar" class="progress-bar"></div></div>
+      <div id="logsBox" class="logs">Ready.</div>
+    </section>
+
+    <section class="kpis">
+      <div class="kpi"><div class="lbl">Confirmed</div><div id="kpiConfirmed" class="val" style="color:var(--ok)">0</div></div>
+      <div class="kpi"><div class="lbl">Headers Hidden</div><div id="kpiHidden" class="val" style="color:var(--info)">0</div></div>
+      <div class="kpi"><div class="lbl">Unknown Domain</div><div id="kpiUnknown" class="val" style="color:var(--warn)">0</div></div>
+      <div class="kpi"><div class="lbl">Unreachable</div><div id="kpiUnreach" class="val" style="color:var(--bad)">0</div></div>
+      <div class="kpi"><div class="lbl">Candidates / DNS</div><div id="kpiCand" class="val">0 / 0</div></div>
+    </section>
+
+    <section class="card">
+      <div class="row" style="justify-content:space-between;margin-bottom:12px">
+        <div class="row">
+          <input id="searchInput" type="text" placeholder="Filter host, IP, CNAME, POP, issuer, source..." style="min-width:260px">
+          <select id="statusFilter">
+            <option value="">All statuses</option>
+            <option value="confirmed">confirmed</option>
+            <option value="fastly_dns_headers_hidden">fastly_dns_headers_hidden</option>
+            <option value="unknown_domain">unknown_domain</option>
+            <option value="dns_only_unreachable">dns_only_unreachable</option>
+            <option value="fastly_dns">fastly_dns</option>
+          </select>
+          <label class="chk"><input id="sniOnlyCheck" type="checkbox"> SNI Cert Match</label>
+        </div>
+        <div class="row">
+          <select id="savedFilesSelect" style="min-width:210px">
+            <option value="">Current / Active Scan</option>
+          </select>
+          <button type="button" data-exp="jsonl">JSONL</button>
+          <button type="button" data-exp="csv">CSV</button>
+          <button type="button" data-exp="txt">TXT</button>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Host</th><th>Status</th><th>HTTP</th><th>SNI</th>
+              <th>Fastly IP</th><th>CNAME</th><th>X-Served-By</th><th>TLS Issuer</th><th>Sources</th>
+            </tr>
+          </thead>
+          <tbody id="resultsBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="detailModal" class="modal-bg hidden">
+  <div class="modal">
+    <div class="modal-head">
+      <strong id="detailTitle" class="mono"></strong>
+      <button id="closeModalBtn" type="button">Close</button>
+    </div>
+    <div class="modal-body">
+      <pre id="detailJson"></pre>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  let mode = 'domain';
+  let allFindings = [];
+  let activeFile = '';
+  let pollTimer = null;
+  let wasRunning = false;
+
+  async function api(path, opts = {}) {
+    const headers = Object.assign({'X-Requested-With': 'fastly-finder'}, opts.headers || {});
+    if (opts.body && typeof opts.body === 'object') {
+      headers['Content-Type'] = 'application/json';
+      opts.body = JSON.stringify(opts.body);
+    }
+    const r = await fetch(path, Object.assign({credentials: 'same-origin', headers}, opts));
+    if (r.status === 401 && path !== '/api/login') {
+      showLogin();
+      throw new Error('unauthorized');
+    }
+    const text = await r.text();
+    let data = {};
+    try { data = text ? JSON.parse(text) : {}; } catch {}
+    if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+    return data;
+  }
+
+  function showLogin() {
+    $('appWrap').classList.add('hidden');
+    $('loginWrap').classList.remove('hidden');
+    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  }
+
+  function showApp(user) {
+    $('loginWrap').classList.add('hidden');
+    $('appWrap').classList.remove('hidden');
+    $('userLabel').textContent = user || 'admin';
+    refreshFiles();
+    pollStatus();
+    loadResults('');
+    if (!pollTimer) pollTimer = setInterval(pollStatus, 1500);
+  }
+
+  $('loginForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    $('loginErr').textContent = '';
+    try {
+      const res = await api('/api/login', {
+        method: 'POST',
+        body: {user: $('loginUser').value.trim(), pass: $('loginPass').value}
+      });
+      $('loginPass').value = '';
+      showApp(res.user);
+    } catch (err) {
+      $('loginErr').textContent = err.message;
+    }
+  });
+
+  $('logoutBtn').addEventListener('click', async () => {
+    try { await api('/api/logout', {method: 'POST'}); } catch {}
+    showLogin();
+  });
+
+  document.querySelectorAll('.tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      mode = btn.dataset.mode;
+      $('panelDomain').classList.toggle('hidden', mode !== 'domain');
+      $('panelGlobal').classList.toggle('hidden', mode !== 'global');
+      $('panelHosts').classList.toggle('hidden', mode !== 'hosts');
+    });
+  });
+
+  $('startBtn').addEventListener('click', async () => {
+    const payload = {
+      global: mode === 'global',
+      domains: mode === 'domain' ? $('domainInput').value.split(/[\s,]+/).filter(Boolean) : [],
+      hosts: mode === 'hosts' ? $('hostsInput').value.split(/\r?\n/).map(s => s.trim()).filter(Boolean) : [],
+      seeds: Array.from(document.querySelectorAll('#seedChecks input:checked')).map(c => c.value),
+      limit: parseInt($('limitInput').value || '0', 10) || 0,
+      ct_entries: parseInt($('ctEntriesInput').value || '3000', 10) || 3000,
+      dns_workers: parseInt($('dnsWorkersInput').value || '150', 10) || 150,
+      http_workers: parseInt($('httpWorkersInput').value || '40', 10) || 40,
+      with_www: $('withWWWCheck').checked,
+      doh: $('dohCheck').checked,
+      include_bgp: $('bgpCheck').checked,
+      skip_probe: $('skipProbeCheck').checked,
+      only_confirmed: $('onlyConfirmedCheck').checked,
+      aaaa: true
+    };
+    try {
+      await api('/api/scan/start', {method: 'POST', body: payload});
+      activeFile = '';
+      $('savedFilesSelect').value = '';
+      pollStatus();
+    } catch (err) {
+      alert(err.message);
+    }
+  });
+
+  $('cancelBtn').addEventListener('click', async () => {
+    try { await api('/api/scan/cancel', {method: 'POST'}); } catch (err) { alert(err.message); }
+  });
+
+  async function pollStatus() {
+    try {
+      const s = await api('/api/status');
+      $('startBtn').disabled = !!s.running;
+      $('cancelBtn').disabled = !s.running;
+      const pill = $('runStatePill');
+      pill.textContent = s.state || 'idle';
+      pill.className = 'pill ' + (s.running ? 'info' : s.state === 'completed' ? 'ok' : s.state === 'error' ? 'bad' : '');
+      $('statusMsg').textContent = s.message || '';
+      const pct = s.total > 0 ? Math.min(100, Math.round((s.done / s.total) * 100)) : (s.running ? 15 : (s.state === 'completed' ? 100 : 0));
+      $('progressBar').style.width = pct + '%';
+      if (Array.isArray(s.logs)) {
+        $('logsBox').textContent = s.logs.join('\n') || 'Ready.';
+        $('logsBox').scrollTop = $('logsBox').scrollHeight;
+      }
+      const c = s.counts || {};
+      $('kpiConfirmed').textContent = c.confirmed || 0;
+      $('kpiHidden').textContent = c.fastly_dns_headers_hidden || 0;
+      $('kpiUnknown').textContent = c.unknown_domain || 0;
+      $('kpiUnreach').textContent = c.dns_only_unreachable || 0;
+      $('kpiCand').textContent = (s.candidates || 0) + ' / ' + (s.fastly_dns || 0);
+
+      if (wasRunning && !s.running) {
+        refreshFiles();
+        if (!activeFile) loadResults('');
+      }
+      wasRunning = !!s.running;
+    } catch {}
+  }
+
+  async function refreshFiles() {
+    try {
+      const res = await api('/api/files');
+      const sel = $('savedFilesSelect');
+      const prev = sel.value;
+      sel.innerHTML = '';
+      const def = document.createElement('option');
+      def.value = '';
+      def.textContent = 'Current / Active Scan';
+      sel.appendChild(def);
+      (res.files || []).forEach(f => {
+        const opt = document.createElement('option');
+        opt.value = f.name;
+        opt.textContent = f.name + ' (' + Math.round(f.size / 1024) + ' KB)';
+        sel.appendChild(opt);
+      });
+      sel.value = prev;
+    } catch {}
+  }
+
+  $('savedFilesSelect').addEventListener('change', e => {
+    activeFile = e.target.value;
+    loadResults(activeFile);
+  });
+
+  async function loadResults(file) {
+    try {
+      const q = file ? ('?file=' + encodeURIComponent(file)) : '';
+      const res = await api('/api/results' + q);
+      allFindings = res.findings || [];
+      renderTable();
+    } catch {}
+  }
+
+  function statusPill(st) {
+    const span = document.createElement('span');
+    span.textContent = st;
+    const cls = st === 'confirmed' ? 'ok' : st === 'unknown_domain' ? 'warn' : st === 'dns_only_unreachable' ? 'bad' : 'info';
+    span.className = 'pill ' + cls;
+    return span;
+  }
+
+  function renderTable() {
+    const q = $('searchInput').value.trim().toLowerCase();
+    const stFilter = $('statusFilter').value;
+    const sniOnly = $('sniOnlyCheck').checked;
+    const tbody = $('resultsBody');
+    tbody.innerHTML = '';
+
+    const rows = allFindings.filter(f => {
+      if (stFilter && f.status !== stFilter) return false;
+      if (sniOnly && !f.edge_sni_cert_match) return false;
+      if (!q) return true;
+      const hay = [
+        f.host, f.status,
+        (f.fastly_ips || []).join(' '),
+        (f.fastly_cnames || []).join(' '),
+        (f.fastly_headers && f.fastly_headers['X-Served-By']) || '',
+        f.tls_issuer || '',
+        (f.sources || []).join(' ')
+      ].join(' ').toLowerCase();
+      return hay.includes(q);
+    });
+
+    const frag = document.createDocumentFragment();
+    rows.slice(0, 1000).forEach(f => {
+      const tr = document.createElement('tr');
+      const cells = [
+        {text: f.host, cls: 'mono'},
+        {node: statusPill(f.status)},
+        {text: f.http_status ? String(f.http_status) : '-', cls: 'mono'},
+        {text: f.edge_sni_cert_match ? 'true' : 'false', cls: 'mono'},
+        {text: (f.fastly_ips && f.fastly_ips[0]) || '-', cls: 'mono'},
+        {text: (f.fastly_cnames && f.fastly_cnames[0]) || '-', cls: 'mono'},
+        {text: (f.fastly_headers && f.fastly_headers['X-Served-By']) || '-', cls: 'mono'},
+        {text: f.tls_issuer || '-'},
+        {text: (f.sources || []).join(',')}
+      ];
+      cells.forEach(c => {
+        const td = document.createElement('td');
+        if (c.cls) td.className = c.cls;
+        if (c.node) td.appendChild(c.node);
+        else td.textContent = c.text;
+        tr.appendChild(td);
+      });
+      tr.addEventListener('click', () => {
+        $('detailTitle').textContent = f.host;
+        $('detailJson').textContent = JSON.stringify(f, null, 2);
+        $('detailModal').classList.remove('hidden');
+      });
+      frag.appendChild(tr);
+    });
+    tbody.appendChild(frag);
+  }
+
+  ['searchInput', 'statusFilter', 'sniOnlyCheck'].forEach(id => {
+    $(id).addEventListener('input', renderTable);
+    $(id).addEventListener('change', renderTable);
+  });
+
+  document.querySelectorAll('button[data-exp]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const params = new URLSearchParams({format: btn.dataset.exp});
+      if (activeFile) params.set('file', activeFile);
+      if ($('onlyConfirmedCheck').checked) params.set('only_confirmed', '1');
+      window.location = '/api/export?' + params.toString();
+    });
+  });
+
+  $('closeModalBtn').addEventListener('click', () => $('detailModal').classList.add('hidden'));
+  $('detailModal').addEventListener('click', e => { if (e.target === $('detailModal')) $('detailModal').classList.add('hidden'); });
+
+  api('/api/me').then(me => showApp(me.user)).catch(showLogin);
+})();
+</script>
+</body>
+</html>
