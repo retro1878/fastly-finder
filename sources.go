@@ -270,11 +270,11 @@ func fetchCrtshSQLDomain(ctx context.Context, domain string) ([]string, error) {
 		return nil, fmt.Errorf("invalid domain %q", domain)
 	}
 	q := fmt.Sprintf(`
-SELECT DISTINCT san
-FROM certificate c, LATERAL unnest(x509_altNames(c.certificate)) san
-WHERE to_tsquery('certwatch', '%s') @@ identities(c.certificate)
+SELECT DISTINCT x509_altNames(c.certificate) AS san
+FROM certificate c
+WHERE plainto_tsquery('certwatch', '%s') @@ identities(c.certificate)
 LIMIT 10000;`, clean)
-	rows, err := queryCrtshPostgres(ctx, q, 25*time.Second)
+	rows, err := queryCrtshPostgres(ctx, q, 35*time.Second)
 	if err != nil {
 		return nil, err
 	}
@@ -500,63 +500,60 @@ func parseCSVHosts(r io.Reader, colIdx int, hasHeader bool, limit int, source st
 func collectGlobalCTFastly(ctx context.Context, opts SourceOptions, store *candidateStore) {
 	// 1. Shared Fastly SSL certs carrying global.ssl.fastly.net in SANs.
 	qShared := `
-SELECT DISTINCT san
-FROM certificate c, LATERAL unnest(x509_altNames(c.certificate)) san
+SELECT DISTINCT x509_altNames(c.certificate) AS san
+FROM certificate c
 WHERE to_tsquery('certwatch', 'global.ssl.fastly.net') @@ identities(c.certificate)
-  AND x509_notAfter(c.certificate) > now()
+  AND coalesce(x509_notAfter(c.certificate), 'infinity'::timestamp) >= now()
 LIMIT 5000;`
-	if rows, err := queryCrtshPostgres(ctx, qShared, 35*time.Second); err != nil {
+	if rows, err := queryCrtshPostgres(ctx, qShared, 40*time.Second); err != nil {
 		if opts.Logf != nil {
 			opts.Logf("[ct-fastly] shared-cert SQL: %v", err)
 		}
 	} else {
-		n := 0
-		for _, r := range rows {
-			if len(r) == 0 {
-				continue
-			}
-			h := NormalizeHost(r[0])
-			if h != "" && !IsFastlyCNAME(h) {
-				store.add(h, "crt.sh-shared")
-				n++
-			}
-		}
+		n := addCrtshRows(rows, "crt.sh-shared", store)
 		if opts.Logf != nil {
 			opts.Logf("[ct-fastly] shared-cert SANs: +%d hosts", n)
 		}
 	}
 
-	// 2. Recent Certainly-issued certs (Fastly's own CA). Query bounded by recent ID window to stay under 54s timeout.
+	// 2. Active Certainly-issued certs (Fastly's own CA) via ca -> issuer_ca_id + partition pruning.
 	qCertainly := `
-SELECT DISTINCT san
+SELECT DISTINCT x509_altNames(sub.certificate) AS san
 FROM (
     SELECT c.certificate
     FROM certificate c
-    WHERE x509_issuerName(c.certificate) ILIKE '%Certainly%'
-    ORDER BY c.id DESC
+    JOIN ca ON c.issuer_ca_id = ca.id
+    WHERE ca.name ILIKE '%Certainly%'
+      AND coalesce(x509_notAfter(c.certificate), 'infinity'::timestamp) >= now()
+      AND coalesce(x509_notAfter(c.certificate), 'infinity'::timestamp) < now() + interval '90 days'
     LIMIT 1500
-) sub, LATERAL unnest(x509_altNames(sub.certificate)) san
+) sub
 LIMIT 5000;`
-	if rows, err := queryCrtshPostgres(ctx, qCertainly, 35*time.Second); err != nil {
+	if rows, err := queryCrtshPostgres(ctx, qCertainly, 45*time.Second); err != nil {
 		if opts.Logf != nil {
 			opts.Logf("[ct-fastly] certainly SQL: %v", err)
 		}
 	} else {
-		n := 0
-		for _, r := range rows {
-			if len(r) == 0 {
-				continue
-			}
-			h := NormalizeHost(r[0])
-			if h != "" && !IsFastlyCNAME(h) {
-				store.add(h, "crt.sh-certainly")
-				n++
-			}
-		}
+		n := addCrtshRows(rows, "crt.sh-certainly", store)
 		if opts.Logf != nil {
 			opts.Logf("[ct-fastly] certainly CA SANs: +%d hosts", n)
 		}
 	}
+}
+
+func addCrtshRows(rows [][]string, source string, store *candidateStore) int {
+	n := 0
+	for _, r := range rows {
+		if len(r) == 0 {
+			continue
+		}
+		h := NormalizeHost(r[0])
+		if h != "" && !IsFastlyCNAME(h) {
+			store.add(h, source)
+			n++
+		}
+	}
+	return n
 }
 
 func fetchOrReadCache(ctx context.Context, client *http.Client, remoteURL, cacheDir, fileName string, maxAge time.Duration, refresh bool, maxBytes int64) ([]byte, error) {
