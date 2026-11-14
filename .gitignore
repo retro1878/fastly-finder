@@ -1,0 +1,6 @@
+fastly-finder-linux-amd64
+fastly-finder-linux-arm64
+fastly-finder
+dist/
+*.jsonl
+*.csv
