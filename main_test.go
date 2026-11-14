@@ -309,3 +309,38 @@ func TestCruxAndChaosParsers(t *testing.T) {
 		t.Fatalf("expected 2 chaos hosts, got added=%d list=%+v", added, chaosStore.sortedList())
 	}
 }
+
+func TestWriteFindingsTableAndAutoFormat(t *testing.T) {
+	if got := resolveOutputFormat("auto", "", true); got != "table" {
+		t.Fatalf("expected table on TTY, got %q", got)
+	}
+	if got := resolveOutputFormat("auto", "", false); got != "jsonl" {
+		t.Fatalf("expected jsonl on pipe, got %q", got)
+	}
+	if got := resolveOutputFormat("auto", "out.csv", true); got != "csv" {
+		t.Fatalf("expected csv from .csv extension, got %q", got)
+	}
+	if got := resolveOutputFormat("txt", "out.csv", true); got != "txt" {
+		t.Fatalf("explicit --format should override extension, got %q", got)
+	}
+
+	var buf bytes.Buffer
+	err := writeFindings(&buf, "table", []Finding{{
+		Host:             "www.example.com",
+		Status:           "confirmed",
+		HTTPStatus:       200,
+		EdgeSNICertMatch: true,
+		FastlyIPs:        []string{"151.101.1.140"},
+		FastlyCNAMEs:     []string{"j.sni.global.fastly.net"},
+		FastlyHeaders:    map[string]string{"X-Served-By": "cache-ams-eham8680059-AMS"},
+		TLSIssuer:        "Certainly Intermediate R1",
+		Sources:          []string{"ct-log"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "HOST") || !strings.Contains(out, "www.example.com") || !strings.Contains(out, "confirmed") {
+		t.Fatalf("unexpected table output:\n%s", out)
+	}
+}

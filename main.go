@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"text/tabwriter"
 	"time"
 )
 
@@ -50,7 +51,7 @@ func run(args []string) int {
 		httpWorkers     = fs.Int("http-workers", 40, "concurrent HTTP/TLS probe workers")
 		httpTimeout     = fs.Duration("http-timeout", 8*time.Second, "per-HTTP/TLS probe timeout")
 		outFile         = fs.String("o", "", "output file path (default stdout)")
-		format          = fs.String("format", "jsonl", "output format: jsonl, csv, txt")
+		format          = fs.String("format", "auto", "output format: auto, table, jsonl, csv, txt")
 		onlyConfirmed   = fs.Bool("only-confirmed", false, "only output confirmed Fastly hosts")
 		cacheDir        = fs.String("cache-dir", defaultCacheDir(), "cache directory for ranges and seed lists")
 		refresh         = fs.Bool("refresh", false, "force refresh of cached ranges and seed lists")
@@ -203,6 +204,7 @@ func run(args []string) int {
 	}
 
 	var out io.Writer = os.Stdout
+	isTTY := false
 	if *outFile != "" {
 		f, err := os.Create(*outFile)
 		if err != nil {
@@ -211,9 +213,12 @@ func run(args []string) int {
 		}
 		defer f.Close()
 		out = f
+	} else if st, err := os.Stdout.Stat(); err == nil && (st.Mode()&os.ModeCharDevice) != 0 {
+		isTTY = true
 	}
 
-	if err := writeFindings(out, *format, filtered); err != nil {
+	resolvedFmt := resolveOutputFormat(*format, *outFile, isTTY)
+	if err := writeFindings(out, resolvedFmt, filtered); err != nil {
 		logf("error writing output: %v", err)
 		return 1
 	}
@@ -229,11 +234,55 @@ func run(args []string) int {
 	return 0
 }
 
+func resolveOutputFormat(requested, outFile string, isTTY bool) string {
+	f := strings.ToLower(strings.TrimSpace(requested))
+	if f != "" && f != "auto" {
+		return f
+	}
+	if outFile != "" {
+		switch strings.ToLower(filepath.Ext(outFile)) {
+		case ".csv":
+			return "csv"
+		case ".txt":
+			return "txt"
+		case ".table", ".tsv":
+			return "table"
+		default:
+			return "jsonl"
+		}
+	}
+	if isTTY {
+		return "table"
+	}
+	return "jsonl"
+}
+
 func writeFindings(w io.Writer, format string, findings []Finding) error {
 	bw := bufio.NewWriter(w)
 	defer bw.Flush()
 
 	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "table":
+		tw := tabwriter.NewWriter(bw, 0, 0, 2, ' ', 0)
+		_, _ = fmt.Fprintln(tw, "HOST\tSTATUS\tHTTP\tSNI\tFASTLY_IP\tCNAME\tX-SERVED-BY\tTLS_ISSUER\tSOURCES")
+		for _, f := range findings {
+			httpStr := "-"
+			if f.HTTPStatus > 0 {
+				httpStr = fmt.Sprintf("%d", f.HTTPStatus)
+			}
+			_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%s\t%s\t%s\t%s\t%s\n",
+				f.Host,
+				f.Status,
+				httpStr,
+				f.EdgeSNICertMatch,
+				firstOrDash(f.FastlyIPs),
+				firstOrDash(f.FastlyCNAMEs),
+				truncateStr(strOrDash(f.FastlyHeaders["X-Served-By"]), 28),
+				truncateStr(strOrDash(f.TLSIssuer), 28),
+				strOrDash(strings.Join(f.Sources, ",")),
+			)
+		}
+		return tw.Flush()
 	case "jsonl", "json":
 		enc := json.NewEncoder(bw)
 		for _, f := range findings {
@@ -270,9 +319,30 @@ func writeFindings(w io.Writer, format string, findings []Finding) error {
 		cw.Flush()
 		return cw.Error()
 	default:
-		return fmt.Errorf("unsupported format %q (use jsonl, csv, txt)", format)
+		return fmt.Errorf("unsupported format %q (use auto, table, jsonl, csv, txt)", format)
 	}
 	return nil
+}
+
+func firstOrDash(items []string) string {
+	if len(items) == 0 || items[0] == "" {
+		return "-"
+	}
+	return items[0]
+}
+
+func strOrDash(s string) string {
+	if strings.TrimSpace(s) == "" {
+		return "-"
+	}
+	return s
+}
+
+func truncateStr(s string, max int) string {
+	if max <= 3 || len(s) <= max {
+		return s
+	}
+	return s[:max-3] + "..."
 }
 
 func readLines(path string) ([]string, error) {
