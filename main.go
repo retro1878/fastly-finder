@@ -30,7 +30,7 @@ func run(args []string) int {
 		domainsFile     = fs.String("D", "", "file of target domains (one per line)")
 		inputFile       = fs.String("i", "", "file of candidate hostnames ('-' for stdin)")
 		globalMode      = fs.Bool("global", false, "enable global Fastly discovery using free seed lists and CT")
-		seedSpec        = fs.String("seed", "tranco,ct-fastly", "comma-separated global seeds: tranco,umbrella,majestic,ct-fastly,all")
+		seedSpec        = fs.String("seed", "tranco,ct-fastly", "comma-separated global seeds: tranco,umbrella,majestic,ct-fastly,ct-logs,all")
 		limit           = fs.Int("limit", 50000, "max entries per global seed list (0 = all)")
 		withWWW         = fs.Bool("with-www", true, "also test www.<domain> for apex-only global seeds")
 		useSubfinder    = fs.Bool("use-subfinder", false, "also invoke local subfinder binary if installed")

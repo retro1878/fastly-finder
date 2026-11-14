@@ -401,15 +401,17 @@ func collectGlobal(ctx context.Context, client *http.Client, opts SourceOptions,
 		case "majestic":
 			loadMajestic(ctx, client, opts, store)
 		case "ct-fastly":
-			collectGlobalCTFastly(ctx, opts, store)
+			collectGlobalCTFastly(ctx, client, opts, store)
+		case "ct-logs":
+			collectDirectCTLogs(ctx, client, 3000, opts, store)
 		case "all":
 			loadSeedZip(ctx, client, "tranco", trancoZipURL, "tranco_top1m.zip", 1, opts, store, true)
 			loadSeedZip(ctx, client, "umbrella", umbrellaZipURL, "umbrella_top1m.zip", 1, opts, store, false)
 			loadMajestic(ctx, client, opts, store)
-			collectGlobalCTFastly(ctx, opts, store)
+			collectGlobalCTFastly(ctx, client, opts, store)
 		default:
 			if opts.Logf != nil {
-				opts.Logf("unknown global seed %q (supported: tranco, umbrella, majestic, ct-fastly, all)", s)
+				opts.Logf("unknown global seed %q (supported: tranco, umbrella, majestic, ct-fastly, ct-logs, all)", s)
 			}
 		}
 	}
@@ -497,48 +499,111 @@ func parseCSVHosts(r io.Reader, colIdx int, hasHeader bool, limit int, source st
 	return count
 }
 
-func collectGlobalCTFastly(ctx context.Context, opts SourceOptions, store *candidateStore) {
-	// 1. Shared Fastly SSL certs carrying global.ssl.fastly.net in SANs.
-	qShared := `
+func collectGlobalCTFastly(ctx context.Context, client *http.Client, opts SourceOptions, store *candidateStore) {
+	var wg sync.WaitGroup
+
+	// 1. Direct RFC 6962 CT log tailing for Certainly-issued + Fastly shared SAN certs (no crt.sh dependency).
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		collectDirectCTLogs(ctx, client, 3000, opts, store)
+	}()
+
+	// 2. Shared Fastly SSL certs carrying global.ssl.fastly.net in SANs (crt.sh SQL + HTTP JSON fallback).
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		qShared := `
 SELECT DISTINCT x509_altNames(c.certificate) AS san
 FROM certificate c
 WHERE to_tsquery('certwatch', 'global.ssl.fastly.net') @@ identities(c.certificate)
   AND coalesce(x509_notAfter(c.certificate), 'infinity'::timestamp) >= now()
-LIMIT 5000;`
-	if rows, err := queryCrtshPostgres(ctx, qShared, 40*time.Second); err != nil {
-		if opts.Logf != nil {
-			opts.Logf("[ct-fastly] shared-cert SQL: %v", err)
+LIMIT 2000;`
+		if rows, err := queryCrtshPostgres(ctx, qShared, 30*time.Second); err == nil {
+			n := addCrtshRows(rows, "crt.sh-shared", store)
+			if opts.Logf != nil {
+				opts.Logf("[ct-fastly] shared-cert SQL SANs: +%d hosts", n)
+			}
+			return
+		} else if opts.Logf != nil {
+			opts.Logf("[ct-fastly] shared-cert SQL: %v (trying crt.sh JSON)", err)
 		}
-	} else {
-		n := addCrtshRows(rows, "crt.sh-shared", store)
-		if opts.Logf != nil {
-			opts.Logf("[ct-fastly] shared-cert SANs: +%d hosts", n)
-		}
-	}
 
-	// 2. Active Certainly-issued certs (Fastly's own CA) via ca -> issuer_ca_id + partition pruning.
-	qCertainly := `
+		if entries, err := fetchCrtshJSON(ctx, client, "global.ssl.fastly.net"); err == nil {
+			n := 0
+			for _, raw := range entries {
+				for _, item := range strings.Split(raw, "\n") {
+					h := NormalizeHost(item)
+					if h != "" && !IsFastlyCNAME(h) {
+						store.add(h, "crt.sh-shared-json")
+						n++
+					}
+				}
+			}
+			if opts.Logf != nil {
+				opts.Logf("[ct-fastly] shared-cert JSON SANs: +%d hosts", n)
+			}
+		} else if opts.Logf != nil {
+			opts.Logf("[ct-fastly] shared-cert JSON: %v", err)
+		}
+	}()
+
+	// 3. Certainly CA ID lookup + bounded active partition query on crt.sh Postgres.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		caRows, err := queryCrtshPostgres(ctx, "SELECT id FROM ca WHERE name ILIKE '%Certainly%' LIMIT 50;", 15*time.Second)
+		if err != nil || len(caRows) == 0 {
+			if opts.Logf != nil && err != nil {
+				opts.Logf("[ct-fastly] certainly CA lookup: %v", err)
+			}
+			return
+		}
+		var ids []string
+		for _, r := range caRows {
+			if len(r) > 0 && isDigits(r[0]) {
+				ids = append(ids, r[0])
+			}
+		}
+		if len(ids) == 0 {
+			return
+		}
+		qCertainly := fmt.Sprintf(`
 SELECT DISTINCT x509_altNames(sub.certificate) AS san
 FROM (
     SELECT c.certificate
     FROM certificate c
-    JOIN ca ON c.issuer_ca_id = ca.id
-    WHERE ca.name ILIKE '%Certainly%'
+    WHERE c.issuer_ca_id IN (%s)
       AND coalesce(x509_notAfter(c.certificate), 'infinity'::timestamp) >= now()
-      AND coalesce(x509_notAfter(c.certificate), 'infinity'::timestamp) < now() + interval '90 days'
-    LIMIT 1500
+      AND coalesce(x509_notAfter(c.certificate), 'infinity'::timestamp) < now() + interval '14 days'
+    LIMIT 500
 ) sub
-LIMIT 5000;`
-	if rows, err := queryCrtshPostgres(ctx, qCertainly, 45*time.Second); err != nil {
-		if opts.Logf != nil {
-			opts.Logf("[ct-fastly] certainly SQL: %v", err)
+LIMIT 2000;`, strings.Join(ids, ","))
+		if rows, err := queryCrtshPostgres(ctx, qCertainly, 30*time.Second); err != nil {
+			if opts.Logf != nil {
+				opts.Logf("[ct-fastly] certainly SQL: %v", err)
+			}
+		} else {
+			n := addCrtshRows(rows, "crt.sh-certainly", store)
+			if opts.Logf != nil {
+				opts.Logf("[ct-fastly] certainly CA SANs: +%d hosts", n)
+			}
 		}
-	} else {
-		n := addCrtshRows(rows, "crt.sh-certainly", store)
-		if opts.Logf != nil {
-			opts.Logf("[ct-fastly] certainly CA SANs: +%d hosts", n)
+	}()
+
+	wg.Wait()
+}
+
+func isDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
 		}
 	}
+	return true
 }
 
 func addCrtshRows(rows [][]string, source string, store *candidateStore) int {

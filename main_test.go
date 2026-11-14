@@ -2,7 +2,14 @@ package main
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/binary"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -221,4 +228,40 @@ func TestPGHelpers(t *testing.T) {
 		t.Fatalf("unexpected DataRow parse: %+v", row)
 	}
 	_ = time.Second
+}
+
+func TestParseCTEntryCert(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "app.example.com"},
+		Issuer:       pkix.Name{CommonName: "Certainly Intermediate R1", Organization: []string{"Certainly"}},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		DNSNames:     []string{"app.example.com", "cdn.example.com"},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Build x509_entry (entry_type = 0) MerkleTreeLeaf
+	leaf := make([]byte, 12)                   // version=0, leaf_type=0, zeroed timestamp
+	binary.BigEndian.PutUint16(leaf[10:12], 0) // entry_type=0
+	leaf = append(leaf, byte(len(der)>>16), byte(len(der)>>8), byte(len(der)))
+	leaf = append(leaf, der...)
+
+	cert, err := parseCTEntryCert(base64.StdEncoding.EncodeToString(leaf), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isFastlyCTCert(cert) {
+		t.Fatal("expected Certainly cert to match isFastlyCTCert")
+	}
+	if len(cert.DNSNames) != 2 || cert.DNSNames[0] != "app.example.com" {
+		t.Fatalf("unexpected SANs: %+v", cert.DNSNames)
+	}
 }

@@ -17,6 +17,29 @@ import (
 // queryCrtshPostgres runs a read-only SQL query against crt.sh:5432 (user=guest, db=certwatch)
 // using the PostgreSQL v3 simple-query wire protocol without requiring external drivers or psql.
 func queryCrtshPostgres(ctx context.Context, sqlQuery string, timeout time.Duration) ([][]string, error) {
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		rows, err := queryCrtshPostgresOnce(ctx, sqlQuery, timeout)
+		if err == nil {
+			return rows, nil
+		}
+		lastErr = err
+		if !strings.Contains(err.Error(), "max_client_conn") && !strings.Contains(err.Error(), "08P01") {
+			return nil, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(time.Duration(attempt+1) * 1500 * time.Millisecond):
+		}
+	}
+	return nil, lastErr
+}
+
+func queryCrtshPostgresOnce(ctx context.Context, sqlQuery string, timeout time.Duration) ([][]string, error) {
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
