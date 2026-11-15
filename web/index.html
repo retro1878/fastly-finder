@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="fa" dir="rtl">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -10,14 +10,14 @@
     --text:#e5ecf6;--muted:#8b9bb4;--accent:#ff282d;--accent2:#ff5c60;
     --ok:#22c55e;--warn:#f59e0b;--bad:#ef4444;--info:#38bdf8;
     --mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
-    --sans:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,sans-serif;
+    --sans:Vazirmatn,Tahoma,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,sans-serif;
   }
   *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.45}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.55}
   .hidden{display:none!important}
-  header{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;background:var(--panel);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:20}
+  header{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:12px 20px;background:var(--panel);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:20}
   .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px}
-  .dot{width:10px;height:10px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px var(--accent)}
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px var(--accent);flex-shrink:0}
   .pill{font-size:11px;padding:2px 8px;border-radius:999px;background:var(--panel2);border:1px solid var(--border);color:var(--muted)}
   .pill.ok{color:#86efac;border-color:#166534;background:#052e16}
   .pill.warn{color:#fde68a;border-color:#854d0e;background:#291a03}
@@ -25,64 +25,79 @@
   .pill.info{color:#7dd3fc;border-color:#075985;background:#082235}
   main{max-width:1360px;margin:0 auto;padding:18px;display:grid;gap:16px}
   .card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px}
-  h2{margin:0 0 12px;font-size:15px;font-weight:600;color:#f3f6fc}
   .row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
   .col{display:flex;flex-direction:column;gap:6px;flex:1;min-width:180px}
-  label{font-size:12px;color:var(--muted)}
+  label{font-size:12px;color:var(--muted);display:inline-flex;align-items:center;gap:5px}
   input[type=text],input[type=password],input[type=number],select,textarea{
     background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:7px;
     padding:8px 10px;font-family:inherit;font-size:13px;outline:none
   }
+  input[type=number],input.ltr,textarea.ltr{direction:ltr;text-align:left}
   input:focus,select:focus,textarea:focus{border-color:var(--info)}
   textarea{min-height:86px;font-family:var(--mono);font-size:12px;resize:vertical}
   button{
     background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:7px;
-    padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;transition:.15s
+    padding:8px 14px;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:.15s
   }
   button:hover:not(:disabled){border-color:#3b4f73;background:#1e293d}
   button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
   button.primary:hover:not(:disabled){background:var(--accent2)}
   button:disabled{opacity:.45;cursor:not-allowed}
-  .tabs{display:flex;gap:8px;margin-bottom:12px;border-bottom:1px solid var(--border);padding-bottom:10px}
+  .lang-btn{padding:5px 10px;font-size:12px;display:inline-flex;align-items:center;gap:6px}
+  .tabs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;border-bottom:1px solid var(--border);padding-bottom:10px}
   .tab{background:transparent;border:1px solid transparent;color:var(--muted);padding:6px 12px}
   .tab.active{background:var(--panel2);border-color:var(--border);color:var(--text)}
   .checks{display:flex;flex-wrap:wrap;gap:10px}
-  .chk{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text);background:var(--bg);border:1px solid var(--border);padding:5px 10px;border-radius:7px;cursor:pointer;user-select:none}
+  .chk{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--text);background:var(--bg);border:1px solid var(--border);padding:5px 10px;border-radius:7px;cursor:pointer;user-select:none}
+  .chk:hover{border-color:#3b4f73}
   .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
-  .kpi{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px 14px}
-  .kpi .lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
-  .kpi .val{font-size:22px;font-weight:700;margin-top:4px;font-family:var(--mono)}
+  .kpi{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px 14px;transition:border-color .15s}
+  .kpi:hover{border-color:#3b4f73}
+  .kpi .lbl{font-size:11px;color:var(--muted);letter-spacing:.02em;display:flex;align-items:center;justify-content:space-between;gap:6px}
+  .kpi .val{font-size:22px;font-weight:700;margin-top:4px;font-family:var(--mono);direction:ltr;text-align:start}
   .progress-wrap{height:8px;background:var(--bg);border-radius:999px;overflow:hidden;border:1px solid var(--border);margin:10px 0}
   .progress-bar{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),#fb923c);transition:width .25s}
-  .logs{background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:10px;font-family:var(--mono);font-size:11.5px;max-height:140px;overflow:auto;color:#b6c3d8;white-space:pre-wrap}
+  .logs{background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:10px;font-family:var(--mono);font-size:11.5px;max-height:140px;overflow:auto;color:#b6c3d8;white-space:pre-wrap;direction:ltr;text-align:left}
   .table-wrap{overflow:auto;border:1px solid var(--border);border-radius:8px;max-height:540px}
   table{width:100%;border-collapse:collapse;font-size:12.5px}
-  th,td{padding:8px 10px;border-bottom:1px solid var(--border);text-align:left;white-space:nowrap}
+  th,td{padding:8px 10px;border-bottom:1px solid var(--border);text-align:start;white-space:nowrap}
   th{background:var(--panel2);color:var(--muted);font-weight:600;position:sticky;top:0;z-index:5}
+  th[data-tip]{cursor:help}
   tbody tr{cursor:pointer}
   tbody tr:hover{background:#162033}
-  .mono{font-family:var(--mono)}
+  .mono{font-family:var(--mono);direction:ltr;unicode-bidi:isolate}
   #loginWrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
-  #loginCard{width:100%;max-width:360px}
+  #loginCard{width:100%;max-width:380px}
   .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;padding:20px;z-index:50}
   .modal{background:var(--panel);border:1px solid var(--border);border-radius:10px;max-width:780px;width:100%;max-height:85vh;display:flex;flex-direction:column}
   .modal-head{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border)}
   .modal-body{padding:16px;overflow:auto}
-  pre{margin:0;background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:12px;font-family:var(--mono);font-size:12px;overflow:auto;white-space:pre-wrap;word-break:break-word}
+  pre{margin:0;background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:12px;font-family:var(--mono);font-size:12px;overflow:auto;white-space:pre-wrap;word-break:break-word;direction:ltr;text-align:left}
+  .tip-badge{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;border:1px solid #354666;color:#9ab0d1;font-size:10px;font-weight:700;line-height:1;opacity:.85;flex-shrink:0}
+  #hoverTip{
+    position:fixed;z-index:100;max-width:320px;padding:9px 12px;border-radius:8px;
+    background:#0c1424;border:1px solid #38507a;color:#e8effa;font-size:12px;line-height:1.5;
+    box-shadow:0 12px 28px rgba(0,0,0,.55);pointer-events:none;opacity:0;transform:translateY(3px);
+    transition:opacity .12s ease,transform .12s ease;white-space:normal
+  }
+  #hoverTip.visible{opacity:1;transform:translateY(0)}
 </style>
 </head>
 <body>
 
 <div id="loginWrap" class="hidden">
   <div id="loginCard" class="card">
-    <div class="brand" style="margin-bottom:14px"><span class="dot"></span><span>fastly-finder</span><span class="pill ok">HTTPS</span></div>
+    <div class="row" style="justify-content:space-between;margin-bottom:14px">
+      <div class="brand"><span class="dot"></span><span>fastly-finder</span><span class="pill ok">HTTPS</span></div>
+      <button id="loginLangBtn" class="lang-btn" type="button" data-tip="tip_lang">EN / فارسی</button>
+    </div>
     <form id="loginForm" class="col">
-      <label for="loginUser">Username</label>
-      <input id="loginUser" type="text" autocomplete="username" value="admin" required>
-      <label for="loginPass">Password</label>
-      <input id="loginPass" type="password" autocomplete="current-password" required>
+      <label for="loginUser" data-tip="tip_login_user"><span data-i18n="username">نام کاربری</span><span class="tip-badge">?</span></label>
+      <input id="loginUser" class="ltr" type="text" autocomplete="username" value="admin" data-tip="tip_login_user" required>
+      <label for="loginPass" data-tip="tip_login_pass"><span data-i18n="password">رمز عبور</span><span class="tip-badge">?</span></label>
+      <input id="loginPass" class="ltr" type="password" autocomplete="current-password" data-tip="tip_login_pass" required>
       <div id="loginErr" style="color:#fca5a5;font-size:12px;min-height:16px"></div>
-      <button class="primary" type="submit">Sign In</button>
+      <button class="primary" type="submit" data-i18n="sign_in">ورود به داشبورد</button>
     </form>
   </div>
 </div>
@@ -93,112 +108,113 @@
       <span class="dot"></span>
       <span>fastly-finder</span>
       <span class="pill ok">HTTPS</span>
-      <span id="runStatePill" class="pill">idle</span>
+      <span id="runStatePill" class="pill" data-tip="tip_run_state">idle</span>
     </div>
     <div class="row">
+      <button id="langBtn" class="lang-btn" type="button" data-tip="tip_lang">EN / فارسی</button>
       <span id="userLabel" class="pill"></span>
-      <button id="logoutBtn" type="button">Logout</button>
+      <button id="logoutBtn" type="button" data-i18n="logout" data-tip="tip_logout">خروج</button>
     </div>
   </header>
 
   <main>
     <section class="card">
       <div class="tabs">
-        <button type="button" class="tab active" data-mode="domain">Target Domain</button>
-        <button type="button" class="tab" data-mode="global">Global Discovery</button>
-        <button type="button" class="tab" data-mode="hosts">Host List</button>
+        <button type="button" class="tab active" data-mode="domain" data-i18n="mode_domain" data-tip="tip_mode_domain">دامنه هدف</button>
+        <button type="button" class="tab" data-mode="global" data-i18n="mode_global" data-tip="tip_mode_global">جستجوی سراسری</button>
+        <button type="button" class="tab" data-mode="hosts" data-i18n="mode_hosts" data-tip="tip_mode_hosts">فهرست هاست</button>
       </div>
 
       <div id="panelDomain" class="col" style="margin-bottom:12px">
-        <label for="domainInput">Target domain(s), comma-separated</label>
-        <input id="domainInput" type="text" placeholder="reddit.com, fastly.com">
+        <label for="domainInput" data-tip="tip_domain_input"><span data-i18n="lbl_domain">دامنه‌های هدف (جداشده با کاما)</span><span class="tip-badge">?</span></label>
+        <input id="domainInput" class="ltr" type="text" placeholder="reddit.com, fastly.com" data-tip="tip_domain_input">
       </div>
 
       <div id="panelGlobal" class="hidden" style="margin-bottom:12px">
-        <label style="display:block;margin-bottom:6px">Free $0 Seeds</label>
+        <label style="margin-bottom:6px" data-tip="tip_seeds_group"><span data-i18n="lbl_seeds">منابع رایگان (بدون هزینه)</span><span class="tip-badge">?</span></label>
         <div class="checks" id="seedChecks" style="margin-bottom:12px">
-          <label class="chk"><input type="checkbox" value="crux" checked> crux</label>
-          <label class="chk"><input type="checkbox" value="chaos" checked> chaos</label>
-          <label class="chk"><input type="checkbox" value="tranco"> tranco</label>
-          <label class="chk"><input type="checkbox" value="umbrella"> umbrella</label>
-          <label class="chk"><input type="checkbox" value="majestic"> majestic</label>
-          <label class="chk"><input type="checkbox" value="ct-fastly" checked> ct-fastly</label>
-          <label class="chk"><input type="checkbox" value="ct-logs"> ct-logs</label>
+          <label class="chk" data-tip="tip_seed_crux"><input type="checkbox" value="crux" checked> crux <span class="tip-badge">?</span></label>
+          <label class="chk" data-tip="tip_seed_chaos"><input type="checkbox" value="chaos" checked> chaos <span class="tip-badge">?</span></label>
+          <label class="chk" data-tip="tip_seed_tranco"><input type="checkbox" value="tranco"> tranco <span class="tip-badge">?</span></label>
+          <label class="chk" data-tip="tip_seed_umbrella"><input type="checkbox" value="umbrella"> umbrella <span class="tip-badge">?</span></label>
+          <label class="chk" data-tip="tip_seed_majestic"><input type="checkbox" value="majestic"> majestic <span class="tip-badge">?</span></label>
+          <label class="chk" data-tip="tip_seed_ct_fastly"><input type="checkbox" value="ct-fastly" checked> ct-fastly <span class="tip-badge">?</span></label>
+          <label class="chk" data-tip="tip_seed_ct_logs"><input type="checkbox" value="ct-logs"> ct-logs <span class="tip-badge">?</span></label>
         </div>
         <div class="row">
-          <div class="col" style="max-width:180px">
-            <label for="limitInput">Seed Limit (0 = all)</label>
-            <input id="limitInput" type="number" min="0" value="20000">
+          <div class="col" style="max-width:200px">
+            <label for="limitInput" data-tip="tip_limit"><span data-i18n="lbl_limit">سقف هر منبع (0 = همه)</span><span class="tip-badge">?</span></label>
+            <input id="limitInput" type="number" min="0" value="20000" data-tip="tip_limit">
           </div>
-          <div class="col" style="max-width:180px">
-            <label for="ctEntriesInput">CT Entries / Log</label>
-            <input id="ctEntriesInput" type="number" min="100" value="5000">
+          <div class="col" style="max-width:200px">
+            <label for="ctEntriesInput" data-tip="tip_ct_entries"><span data-i18n="lbl_ct_entries">گواهی‌های اخیر هر CT Log</span><span class="tip-badge">?</span></label>
+            <input id="ctEntriesInput" type="number" min="100" value="5000" data-tip="tip_ct_entries">
           </div>
         </div>
       </div>
 
       <div id="panelHosts" class="hidden col" style="margin-bottom:12px">
-        <label for="hostsInput">Candidate hostnames (one per line)</label>
-        <textarea id="hostsInput" placeholder="www.reddit.com&#10;docs.fastly.com"></textarea>
+        <label for="hostsInput" data-tip="tip_hosts_input"><span data-i18n="lbl_hosts">نام‌های میزبان (هر خط یک هاست)</span><span class="tip-badge">?</span></label>
+        <textarea id="hostsInput" class="ltr" placeholder="www.reddit.com&#10;docs.fastly.com" data-tip="tip_hosts_input"></textarea>
       </div>
 
       <div class="row" style="margin-bottom:12px">
-        <div class="col" style="max-width:150px">
-          <label for="dnsWorkersInput">DNS Workers</label>
-          <input id="dnsWorkersInput" type="number" min="1" max="1000" value="150">
+        <div class="col" style="max-width:170px">
+          <label for="dnsWorkersInput" data-tip="tip_dns_workers"><span data-i18n="lbl_dns_workers">کارگرهای همزمان DNS</span><span class="tip-badge">?</span></label>
+          <input id="dnsWorkersInput" type="number" min="1" max="1000" value="150" data-tip="tip_dns_workers">
         </div>
-        <div class="col" style="max-width:150px">
-          <label for="httpWorkersInput">HTTP Workers</label>
-          <input id="httpWorkersInput" type="number" min="1" max="500" value="40">
+        <div class="col" style="max-width:170px">
+          <label for="httpWorkersInput" data-tip="tip_http_workers"><span data-i18n="lbl_http_workers">کارگرهای همزمان HTTP</span><span class="tip-badge">?</span></label>
+          <input id="httpWorkersInput" type="number" min="1" max="500" value="40" data-tip="tip_http_workers">
         </div>
         <div class="checks" style="padding-top:16px">
-          <label class="chk"><input id="withWWWCheck" type="checkbox" checked> www. expand</label>
-          <label class="chk"><input id="dohCheck" type="checkbox"> DoH</label>
-          <label class="chk"><input id="bgpCheck" type="checkbox"> RIPEstat BGP</label>
-          <label class="chk"><input id="skipProbeCheck" type="checkbox"> DNS-only</label>
-          <label class="chk"><input id="onlyConfirmedCheck" type="checkbox"> Only confirmed</label>
+          <label class="chk" data-tip="tip_with_www"><input id="withWWWCheck" type="checkbox" checked> <span data-i18n="chk_www">افزودن www.</span> <span class="tip-badge">?</span></label>
+          <label class="chk" data-tip="tip_doh"><input id="dohCheck" type="checkbox"> <span data-i18n="chk_doh">DNS از مسیر DoH</span> <span class="tip-badge">?</span></label>
+          <label class="chk" data-tip="tip_bgp"><input id="bgpCheck" type="checkbox"> <span data-i18n="chk_bgp">رنج‌های BGP</span> <span class="tip-badge">?</span></label>
+          <label class="chk" data-tip="tip_skip_probe"><input id="skipProbeCheck" type="checkbox"> <span data-i18n="chk_dns_only">فقط بررسی DNS</span> <span class="tip-badge">?</span></label>
+          <label class="chk" data-tip="tip_only_confirmed"><input id="onlyConfirmedCheck" type="checkbox"> <span data-i18n="chk_only_confirmed">فقط موارد تأییدشده</span> <span class="tip-badge">?</span></label>
         </div>
       </div>
 
       <div class="row">
-        <button id="startBtn" class="primary" type="button">Start Scan</button>
-        <button id="cancelBtn" type="button" disabled>Cancel</button>
+        <button id="startBtn" class="primary" type="button" data-i18n="btn_start" data-tip="tip_start">شروع اسکن</button>
+        <button id="cancelBtn" type="button" disabled data-i18n="btn_cancel" data-tip="tip_cancel">توقف</button>
         <span id="statusMsg" class="mono" style="font-size:12px;color:var(--muted)"></span>
       </div>
 
       <div class="progress-wrap"><div id="progressBar" class="progress-bar"></div></div>
-      <div id="logsBox" class="logs">Ready.</div>
+      <div id="logsBox" class="logs" data-tip="tip_logs">آماده.</div>
     </section>
 
     <section class="kpis">
-      <div class="kpi"><div class="lbl">Confirmed</div><div id="kpiConfirmed" class="val" style="color:var(--ok)">0</div></div>
-      <div class="kpi"><div class="lbl">Headers Hidden</div><div id="kpiHidden" class="val" style="color:var(--info)">0</div></div>
-      <div class="kpi"><div class="lbl">Unknown Domain</div><div id="kpiUnknown" class="val" style="color:var(--warn)">0</div></div>
-      <div class="kpi"><div class="lbl">Unreachable</div><div id="kpiUnreach" class="val" style="color:var(--bad)">0</div></div>
-      <div class="kpi"><div class="lbl">Candidates / DNS</div><div id="kpiCand" class="val">0 / 0</div></div>
+      <div class="kpi" data-tip="tip_kpi_confirmed"><div class="lbl"><span data-i18n="kpi_confirmed">تأییدشده (Confirmed)</span><span class="tip-badge">?</span></div><div id="kpiConfirmed" class="val" style="color:var(--ok)">0</div></div>
+      <div class="kpi" data-tip="tip_kpi_hidden"><div class="lbl"><span data-i18n="kpi_hidden">هدر مخفی</span><span class="tip-badge">?</span></div><div id="kpiHidden" class="val" style="color:var(--info)">0</div></div>
+      <div class="kpi" data-tip="tip_kpi_unknown"><div class="lbl"><span data-i18n="kpi_unknown">دامنه ثبت‌نشده</span><span class="tip-badge">?</span></div><div id="kpiUnknown" class="val" style="color:var(--warn)">0</div></div>
+      <div class="kpi" data-tip="tip_kpi_unreach"><div class="lbl"><span data-i18n="kpi_unreach">غیرقابل‌دسترس</span><span class="tip-badge">?</span></div><div id="kpiUnreach" class="val" style="color:var(--bad)">0</div></div>
+      <div class="kpi" data-tip="tip_kpi_cand"><div class="lbl"><span data-i18n="kpi_cand">کاندید / تطبیق DNS</span><span class="tip-badge">?</span></div><div id="kpiCand" class="val">0 / 0</div></div>
     </section>
 
     <section class="card">
       <div class="row" style="justify-content:space-between;margin-bottom:12px">
         <div class="row">
-          <input id="searchInput" type="text" placeholder="Filter host, IP, CNAME, POP, issuer, source..." style="min-width:260px">
-          <select id="statusFilter">
-            <option value="">All statuses</option>
+          <input id="searchInput" type="text" data-i18n-ph="ph_search" placeholder="جستجو در هاست، IP، CNAME، POP، صادرکننده، منبع..." style="min-width:260px" data-tip="tip_search">
+          <select id="statusFilter" data-tip="tip_status_filter">
+            <option value="" data-i18n="opt_all">همه وضعیت‌ها</option>
             <option value="confirmed">confirmed</option>
             <option value="fastly_dns_headers_hidden">fastly_dns_headers_hidden</option>
             <option value="unknown_domain">unknown_domain</option>
             <option value="dns_only_unreachable">dns_only_unreachable</option>
             <option value="fastly_dns">fastly_dns</option>
           </select>
-          <label class="chk"><input id="sniOnlyCheck" type="checkbox"> SNI Cert Match</label>
+          <label class="chk" data-tip="tip_sni_filter"><input id="sniOnlyCheck" type="checkbox"> <span data-i18n="chk_sni_only">تطبیق گواهی SNI</span> <span class="tip-badge">?</span></label>
         </div>
         <div class="row">
-          <select id="savedFilesSelect" style="min-width:210px">
-            <option value="">Current / Active Scan</option>
+          <select id="savedFilesSelect" style="min-width:220px" data-tip="tip_saved_files">
+            <option value="" data-i18n="opt_current">اسکن جاری / فعال</option>
           </select>
-          <button type="button" data-exp="jsonl">JSONL</button>
-          <button type="button" data-exp="csv">CSV</button>
-          <button type="button" data-exp="txt">TXT</button>
+          <button type="button" data-exp="jsonl" data-tip="tip_exp_jsonl">JSONL</button>
+          <button type="button" data-exp="csv" data-tip="tip_exp_csv">CSV</button>
+          <button type="button" data-exp="txt" data-tip="tip_exp_txt">TXT</button>
         </div>
       </div>
 
@@ -206,8 +222,15 @@
         <table>
           <thead>
             <tr>
-              <th>Host</th><th>Status</th><th>HTTP</th><th>SNI</th>
-              <th>Fastly IP</th><th>CNAME</th><th>X-Served-By</th><th>TLS Issuer</th><th>Sources</th>
+              <th data-tip="tip_col_host" data-i18n="col_host">هاست</th>
+              <th data-tip="tip_col_status" data-i18n="col_status">وضعیت</th>
+              <th data-tip="tip_col_http" data-i18n="col_http">HTTP</th>
+              <th data-tip="tip_col_sni" data-i18n="col_sni">SNI</th>
+              <th data-tip="tip_col_ip" data-i18n="col_ip">IP فستلی</th>
+              <th data-tip="tip_col_cname" data-i18n="col_cname">CNAME</th>
+              <th data-tip="tip_col_pop" data-i18n="col_pop">X-Served-By</th>
+              <th data-tip="tip_col_issuer" data-i18n="col_issuer">صادرکننده TLS</th>
+              <th data-tip="tip_col_sources" data-i18n="col_sources">منابع</th>
             </tr>
           </thead>
           <tbody id="resultsBody"></tbody>
@@ -221,7 +244,7 @@
   <div class="modal">
     <div class="modal-head">
       <strong id="detailTitle" class="mono"></strong>
-      <button id="closeModalBtn" type="button">Close</button>
+      <button id="closeModalBtn" type="button" data-i18n="btn_close">بستن</button>
     </div>
     <div class="modal-body">
       <pre id="detailJson"></pre>
@@ -229,14 +252,339 @@
   </div>
 </div>
 
+<div id="hoverTip" role="tooltip" aria-hidden="true"></div>
+
 <script>
 (() => {
+  const I18N = {
+    fa: {
+      username: 'نام کاربری',
+      password: 'رمز عبور',
+      sign_in: 'ورود به داشبورد',
+      logout: 'خروج',
+      mode_domain: 'دامنه هدف',
+      mode_global: 'جستجوی سراسری',
+      mode_hosts: 'فهرست هاست',
+      lbl_domain: 'دامنه‌های هدف (جداشده با کاما)',
+      lbl_seeds: 'منابع رایگان کشف سراسری (۰ دلار)',
+      lbl_limit: 'سقف هر منبع (0 = همه)',
+      lbl_ct_entries: 'تعداد گواهی اخیر هر CT Log',
+      lbl_hosts: 'نام‌های میزبان (هر خط یک هاست)',
+      lbl_dns_workers: 'کارگرهای همزمان DNS',
+      lbl_http_workers: 'کارگرهای همزمان HTTP',
+      chk_www: 'افزودن www.',
+      chk_doh: 'DNS از مسیر DoH',
+      chk_bgp: 'افزودن رنج BGP',
+      chk_dns_only: 'فقط بررسی DNS',
+      chk_only_confirmed: 'فقط تأییدشده‌ها',
+      btn_start: 'شروع اسکن',
+      btn_cancel: 'توقف',
+      kpi_confirmed: 'تأییدشده (Confirmed)',
+      kpi_hidden: 'هدر مخفی',
+      kpi_unknown: 'دامنه ثبت‌نشده',
+      kpi_unreach: 'غیرقابل‌دسترس',
+      kpi_cand: 'کاندید / تطبیق DNS',
+      ph_search: 'جستجو در هاست، IP، CNAME، POP، صادرکننده، منبع...',
+      opt_all: 'همه وضعیت‌ها',
+      chk_sni_only: 'تطبیق گواهی SNI',
+      opt_current: 'اسکن جاری / فعال',
+      col_host: 'هاست',
+      col_status: 'وضعیت',
+      col_http: 'HTTP',
+      col_sni: 'SNI',
+      col_ip: 'IP فستلی',
+      col_cname: 'CNAME',
+      col_pop: 'X-Served-By',
+      col_issuer: 'صادرکننده TLS',
+      col_sources: 'منابع',
+      btn_close: 'بستن',
+      ready: 'آماده.',
+      lang_btn: 'EN / فارسی',
+      states: {
+        idle: 'آماده',
+        running: 'در حال اجرا',
+        completed: 'تکمیل شد',
+        cancelled: 'متوقف شد',
+        error: 'خطا'
+      },
+      statuses: {
+        confirmed: 'تأییدشده (Confirmed)',
+        fastly_dns_headers_hidden: 'DNS فستلی / هدر مخفی',
+        unknown_domain: 'دامنه ثبت‌نشده (Unknown Domain)',
+        dns_only_unreachable: 'DNS فستلی / غیرقابل‌دسترس',
+        fastly_dns: 'فقط تطبیق DNS'
+      },
+      tips: {
+        tip_lang: 'تغییر زبان رابط کاربری و جهت چیدمان بین فارسی (پیش‌فرض) و انگلیسی.',
+        tip_login_user: 'نام کاربری داشبورد (تنظیم‌شده با --web-auth یا متغیر محیطی FASTLY_FINDER_WEB_AUTH، به‌طور پیش‌فرض admin).',
+        tip_login_pass: 'رمز عبور ورود به داشبورد (ذخیره‌شده در /etc/fastly-finder/env یا رمز تصادفی چاپ‌شده هنگام راه‌اندازی).',
+        tip_run_state: 'وضعیت لحظه‌ای موتور اسکن: آماده، در حال اجرا، تکمیل‌شده، متوقف‌شده یا خطا.',
+        tip_logout: 'خروج از نشست فعلی و پاک‌کردن کوکی امن ff_session از مرورگر.',
+        tip_mode_domain: 'حالت دامنه هدف: زیر دامنه‌های یک یا چند دامنه مشخص را از منابع رایگان (crt.sh، Cert Spotter، HackerTarget، OTX، Wayback) جمع‌آوری و بررسی می‌کند.',
+        tip_mode_global: 'حالت کشف سراسری: بدون نیاز به دامنه خاص، از فهرست‌های عمومی و لاگ‌های CT هاست‌های فعال روی شبکه Fastly را پیدا می‌کند.',
+        tip_mode_hosts: 'حالت فهرست دلخواه: فقط فهرست هاست‌هایی که مستقیماً وارد می‌کنید را بررسی DNS و پروب HTTP/TLS می‌کند.',
+        tip_domain_input: 'یک یا چند دامنه اصلی (مثل reddit.com, fastly.com) وارد کنید. ابزار به‌صورت همزمان از چند منبع passive زیر دامنه‌ها را گردآوری و راستی‌آزمایی می‌کند.',
+        tip_seeds_group: 'منابع رایگان و بدون نیاز به کلید API برای کشف سراسری. هر منبع انتخاب‌شده در حافظه کش ذخیره و سپس یکتاسازی می‌شود.',
+        tip_seed_crux: 'CrUX (Chrome User Experience Report): دامنه‌های واقعی پربازدید استخراج‌شده از آمار مرورگر کروم (معمولاً بالای ۱ میلیون مبدا وب).',
+        tip_seed_chaos: 'Chaos (ProjectDiscovery): آرشیو رایگان زیردامنه‌های برنامه‌های عمومی باگ‌بانتی؛ برای یافتن زیردامنه‌های اختصاصی روی CDN بسیار مؤثر است.',
+        tip_seed_tranco: 'Tranco Top 1M: فهرست رتبه‌بندی تحقیقاتی و پایدار ۱ میلیون دامنه برتر وب.',
+        tip_seed_umbrella: 'Cisco Umbrella Top 1M: فهرست ۱ میلیون دامنه برتر بر اساس ترافیک واقعی DNS (شامل زیردامنه‌ها و سرویس‌های API).',
+        tip_seed_majestic: 'Majestic Million: فهرست ۱ میلیون دامنه برتر بر اساس تعداد زیرشبکه‌های ارجاع‌دهنده.',
+        tip_seed_ct_fastly: 'گواهی‌های اشتراکی Fastly و صادرکننده اختصاصی فستلی (Certainly CA) از crt.sh و دنبال‌کردن مستقیم CT Logها برای یافتن هاست‌های جدید روی Fastly.',
+        tip_seed_ct_logs: 'اسکن مستقیم انتهای لاگ‌های عمومی Certificate Transparency (استاندارد RFC 6962) برای استخراج گواهی‌های تازه‌صادرشده Fastly/Certainly بدون وابستگی به crt.sh.',
+        tip_limit: 'حداکثر تعداد رکورد خوانده‌شده از هر فهرست منبع (مثل crux یا chaos). مقدار بزرگ‌تر پوشش بیشتر اما زمان DNS طولانی‌تر دارد؛ 0 یعنی کل فهرست.',
+        tip_ct_entries: 'تعداد گواهی‌های اخیر که از انتهای هر CT Log در منابع ct-fastly و ct-logs بررسی می‌شود (مقدار بالاتر = کشف بیشتر با زمان اسکن کمی بیشتر).',
+        tip_hosts_input: 'هر نام میزبان را در یک خط بنویسید (یا لینک بچسبانید). آدرس‌ها پاکسازی و یکتا شده و مستقیماً وارد مرحله DNS و پروب فستلی می‌شوند.',
+        tip_dns_workers: 'تعداد رشته‌های همزمان (Goroutine) برای پرس‌وجوی رکوردهای DNS. روی سرورهای سریع ۱۵۰ تا ۳۰۰ مناسب است؛ مقدار خیلی بالا ممکن است باعث محدودیت نرخ DNS شود.',
+        tip_http_workers: 'تعداد کارگرهای همزمان برای ارسال درخواست HTTP با هدر Fastly-Debug: 1 و پروب مستقیم TLS SNI به لبه Fastly.',
+        tip_with_www: 'برای دامنه‌های اصلی در منابع سراسری (مثل Tranco و CrUX)، به‌صورت خودکار معادل www.<domain> را هم اضافه و تست می‌کند چون بسیاری از سایت‌ها فقط www را روی CDN می‌گذارند.',
+        tip_doh: 'به جای ارسال کوئری UDP روی پورت ۵۳، از DNS-over-HTTPS (سرویس dns.google) استفاده می‌کند؛ مناسب شبکه‌هایی که UDP/53 را محدود یا فیلتر کرده‌اند.',
+        tip_bgp: 'پیشوندهای IP اعلام‌شده در BGP برای ASNهای رسمی فستلی (AS54113 و AS394192) را از RIPEstat هم ادغام می‌کند تا رنج‌های تازه هم شناسایی شوند.',
+        tip_skip_probe: 'فقط تطبیق DNS (رکوردهای CNAME و رنج IP فستلی) را انجام می‌دهد و درخواست HTTP یا TLS SNI ارسال نمی‌کند؛ بسیار سریع برای غربالگری اولیه.',
+        tip_only_confirmed: 'در خروجی و فایل ذخیره‌شده فقط هاست‌هایی را نگه می‌دارد که در بررسی HTTP/TLS به‌صورت قطعی به‌عنوان Fastly تأیید شده‌اند.',
+        tip_start: 'ارسال تنظیمات فعلی به سرور و شروع اسکن در پس‌زمینه. پیشرفت و لاگ‌ها به‌طور خودکار در همین صفحه نمایش داده می‌شوند.',
+        tip_cancel: 'لغو فوری اسکن در حال اجرا با قطع Context موتور اسکن.',
+        tip_logs: 'گزارش زنده مراحل اسکن: بارگذاری رنج‌های IP فستلی، تعداد هاست‌های هر منبع، نتایج تطبیق DNS و ذخیره فایل خروجی.',
+        tip_kpi_confirmed: 'هاست‌هایی که DNS آن‌ها به Fastly اشاره دارد و در پروب HTTP هدرهای Fastly (مثل X-Served-By / Fastly-Debug) دیده شده یا گواهی TLS لبه با نام هاست تطبیق داشته است.',
+        tip_kpi_hidden: 'دامنه‌هایی که DNS آن‌ها روی Fastly است و پاسخ HTTP می‌دهند، اما مالک سایت هدرهای شناسایی Fastly را مخفی یا حذف کرده است.',
+        tip_kpi_unknown: 'هاست‌هایی که DNS آن‌ها به IP/CNAME فستلی اشاره می‌کند اما لبه Fastly خطای Fastly error: unknown domain برمی‌گرداند (نشان‌دهنده سرویس ثبت‌نشده یا رهاشده).',
+        tip_kpi_unreach: 'هاست‌هایی که روی DNS فستلی قرار دارند اما ارتباط HTTP یا TLS با آن‌ها با تایم‌اوت یا خطای اتصال مواجه شده است.',
+        tip_kpi_cand: 'عدد چپ: کل هاست‌های یکتای جمع‌آوری‌شده؛ عدد راست: تعداد هاست‌هایی که CNAME یا IP آن‌ها با شبکه Fastly مطابقت داشته است.',
+        tip_search: 'فیلتر فوری ردیف‌های جدول بر اساس نام هاست، وضعیت، IP فستلی، CNAME، نام POP (مثل cache-ams...)، صادرکننده TLS یا منبع کشف.',
+        tip_status_filter: 'محدود کردن جدول به یک وضعیت خاص از نتایج بررسی Fastly.',
+        tip_sni_filter: 'نمایش فقط هاست‌هایی که هنگام اتصال مستقیم به IP لبه Fastly با نام میزبان در TLS SNI و Host، گواهی معتبر منطبق با همان دامنه تحویل داده‌اند.',
+        tip_saved_files: 'انتخاب بین نتایج اسکن جاری یا بارگذاری فایل‌های .jsonl ذخیره‌شده از اسکن‌های قبلی در سرور (--web-dir).',
+        tip_exp_jsonl: 'دانلود نتایج اسکن انتخاب‌شده در قالب JSON Lines (هر خط یک شیء JSON کامل با تمام جزییات DNS، هدرها و گواهی).',
+        tip_exp_csv: 'دانلود نتایج در قالب جدول CSV مناسب برای Excel و اسکریپت‌های پردازش داده.',
+        tip_exp_txt: 'دانلود فقط فهرست ساده نام هاست‌ها (یک هاست در هر خط) برای استفاده در ابزارهای دیگر.',
+        tip_col_host: 'نام میزبان نرمال‌سازی‌شده مورد بررسی. با کلیک روی هر ردیف، خروجی کامل JSON آن نمایش داده می‌شود.',
+        tip_col_status: 'نتیجه نهایی طبقه‌بندی Fastly پس از بررسی DNS، هدرهای HTTP و پروب مستقیم SNI/Host روی لبه.',
+        tip_col_http: 'کد وضعیت HTTP دریافتی از پروب لبه (با ارسال هدر Fastly-Debug: 1).',
+        tip_col_sni: 'نشان می‌دهد آیا پروب مستقیم TLS روی IP لبه فستلی برای این نام میزبان گواهی معتبر و منطبق با هاست برگردانده است یا خیر (true/false).',
+        tip_col_ip: 'اولین IPv4/IPv6 فستلی که DNS این هاست به آن اشاره کرده است.',
+        tip_col_cname: 'نام متعارف (CNAME) فستلی شناسایی‌شده در زنجیره DNS (مثل *.sni.global.fastly.net یا *.fastlylb.net).',
+        tip_col_pop: 'مقدار هدر X-Served-By که مرکز داده و POP پاسخ‌دهنده Fastly (مثل cache-ams) را مشخص می‌کند.',
+        tip_col_issuer: 'نام مرجع صادرکننده گواهی TLS مشاهده‌شده هنگام هندشیک لبه (مثل Certainly Intermediate یا DigiCert).',
+        tip_col_sources: 'منابعی که این نام میزبان از آن‌ها کشف شده است (مثل crux، chaos، crt.sh-shared، ct-log).'
+      }
+    },
+    en: {
+      username: 'Username',
+      password: 'Password',
+      sign_in: 'Sign In',
+      logout: 'Logout',
+      mode_domain: 'Target Domain',
+      mode_global: 'Global Discovery',
+      mode_hosts: 'Host List',
+      lbl_domain: 'Target domain(s), comma-separated',
+      lbl_seeds: 'Free $0 Global Seeds',
+      lbl_limit: 'Seed Limit (0 = all)',
+      lbl_ct_entries: 'CT Entries / Log',
+      lbl_hosts: 'Candidate hostnames (one per line)',
+      lbl_dns_workers: 'DNS Workers',
+      lbl_http_workers: 'HTTP Workers',
+      chk_www: 'www. expand',
+      chk_doh: 'DoH',
+      chk_bgp: 'RIPEstat BGP',
+      chk_dns_only: 'DNS-only',
+      chk_only_confirmed: 'Only confirmed',
+      btn_start: 'Start Scan',
+      btn_cancel: 'Cancel',
+      kpi_confirmed: 'Confirmed',
+      kpi_hidden: 'Headers Hidden',
+      kpi_unknown: 'Unknown Domain',
+      kpi_unreach: 'Unreachable',
+      kpi_cand: 'Candidates / DNS',
+      ph_search: 'Filter host, IP, CNAME, POP, issuer, source...',
+      opt_all: 'All statuses',
+      chk_sni_only: 'SNI Cert Match',
+      opt_current: 'Current / Active Scan',
+      col_host: 'Host',
+      col_status: 'Status',
+      col_http: 'HTTP',
+      col_sni: 'SNI',
+      col_ip: 'Fastly IP',
+      col_cname: 'CNAME',
+      col_pop: 'X-Served-By',
+      col_issuer: 'TLS Issuer',
+      col_sources: 'Sources',
+      btn_close: 'Close',
+      ready: 'Ready.',
+      lang_btn: 'فارسی / EN',
+      states: {
+        idle: 'idle',
+        running: 'running',
+        completed: 'completed',
+        cancelled: 'cancelled',
+        error: 'error'
+      },
+      statuses: {
+        confirmed: 'confirmed',
+        fastly_dns_headers_hidden: 'fastly_dns_headers_hidden',
+        unknown_domain: 'unknown_domain',
+        dns_only_unreachable: 'dns_only_unreachable',
+        fastly_dns: 'fastly_dns'
+      },
+      tips: {
+        tip_lang: 'Switch UI language and layout direction between Persian (default, RTL) and English (LTR).',
+        tip_login_user: 'Dashboard username configured via --web-auth or FASTLY_FINDER_WEB_AUTH (defaults to admin).',
+        tip_login_pass: 'Dashboard password stored in /etc/fastly-finder/env or auto-generated cleanly at startup.',
+        tip_run_state: 'Live scan engine state: idle, running, completed, cancelled, or error.',
+        tip_logout: 'End the current authenticated session and clear the HttpOnly ff_session cookie.',
+        tip_mode_domain: 'Target Domain mode: enumerates subdomains of specific domains from free passive/CT sources (crt.sh, Cert Spotter, HackerTarget, OTX, Wayback, optional subfinder).',
+        tip_mode_global: 'Global Discovery mode: finds active Fastly-hosted domains globally using $0 seed lists and live CT logs without a specific target domain.',
+        tip_mode_hosts: 'Host List mode: normalizes and verifies an explicit newline-separated list of hostnames.',
+        tip_domain_input: 'Enter one or more comma-separated apex domains (e.g. reddit.com, fastly.com). Subdomains are harvested concurrently and checked against Fastly DNS & edge probes.',
+        tip_seeds_group: 'Zero-cost, API-key-free global datasets. Selected seeds are cached locally in --cache-dir and deduplicated into one candidate list.',
+        tip_seed_crux: 'CrUX (Chrome User Experience Report): real-world popular origin hosts collected from Chrome usage metrics.',
+        tip_seed_chaos: 'Chaos (ProjectDiscovery): free bug-bounty subdomain archives—strong source for real production CDN hostnames.',
+        tip_seed_tranco: 'Tranco Top 1M: research-grade, manipulation-resistant ranking of top 1M web domains.',
+        tip_seed_umbrella: 'Cisco Umbrella Top 1M: DNS query popularity list containing both apex domains and active subdomains.',
+        tip_seed_majestic: 'Majestic Million: top 1M domains ranked by referring /24 subnets.',
+        tip_seed_ct_fastly: 'Fastly shared SSL SANs and Certainly CA certs via crt.sh JSON/Postgres plus direct CT log tailing.',
+        tip_seed_ct_logs: 'Directly tails public RFC 6962 Certificate Transparency logs looking for Fastly/Certainly certificates without relying on crt.sh.',
+        tip_limit: 'Maximum hostnames loaded per global seed list (e.g. crux, chaos, tranco). Higher = broader coverage, longer DNS phase; 0 loads every entry.',
+        tip_ct_entries: 'Number of recent certificates scanned from the tail of each CT log in ct-fastly and ct-logs.',
+        tip_hosts_input: 'Paste candidate hostnames (or URLs), one per line. Normalized and deduplicated before DNS and Fastly edge verification.',
+        tip_dns_workers: 'Number of concurrent goroutines resolving A/AAAA/CNAME records. 150–300 works well on fast VPS links; excessive values can rate-limit UDP resolvers.',
+        tip_http_workers: 'Number of concurrent workers sending Fastly-Debug: 1 HTTP requests and direct-IP edge SNI/Host TLS probes.',
+        tip_with_www: 'Automatically also tests www.<domain> for apex-only global seeds (Tranco, CrUX, Majestic), catching sites that only put www on Fastly.',
+        tip_doh: 'Resolves DNS via HTTPS JSON (dns.google) instead of UDP port 53. Helpful when UDP/53 is filtered or rate-limited.',
+        tip_bgp: 'Merges live BGP prefixes announced by Fastly ASNs (AS54113, AS394192) from RIPEstat alongside official Fastly IP ranges.',
+        tip_skip_probe: 'Runs DNS CNAME/CIDR matching only and skips HTTP + direct-IP TLS edge verification probes.',
+        tip_only_confirmed: 'Keeps and saves only positively confirmed Fastly hosts (dropping hidden-header, unknown_domain, and unreachable entries).',
+        tip_start: 'Submits this scan configuration and runs the pipeline asynchronously on the server while streaming progress and logs.',
+        tip_cancel: 'Immediately cancels the active scan context.',
+        tip_logs: 'Live pipeline logs: Fastly IP range source, per-seed host counts, DNS match summary, and saved output file name.',
+        tip_kpi_confirmed: 'Hosts on Fastly DNS/IP whose HTTP probe sees Fastly headers (X-Served-By / Fastly-Debug) or whose edge TLS SNI cert matches.',
+        tip_kpi_hidden: 'Hosts pointing to Fastly DNS/IP that answer HTTP requests, with Fastly response headers stripped or hidden.',
+        tip_kpi_unknown: 'Hosts pointing to Fastly DNS/IP that return "Fastly error: unknown domain" (unconfigured or dangling domain).',
+        tip_kpi_unreach: 'Hosts on Fastly DNS/IP where HTTP/TLS probes timed out or refused connections.',
+        tip_kpi_cand: 'Total unique candidate hostnames collected vs how many matched Fastly CNAMEs or IP CIDRs.',
+        tip_search: 'Instant client-side filter across hostname, status, Fastly IP, CNAME, POP header (X-Served-By), TLS issuer, and sources.',
+        tip_status_filter: 'Filter displayed table rows to a single Fastly verification status.',
+        tip_sni_filter: 'Show only hosts whose direct-IP TLS probe with SNI + Host returned a certificate matching that hostname.',
+        tip_saved_files: 'Switch between the active in-memory scan or previously saved .jsonl files stored in --web-dir.',
+        tip_exp_jsonl: 'Download the selected findings as JSON Lines (full Finding object per line).',
+        tip_exp_csv: 'Download the selected findings formatted as CSV.',
+        tip_exp_txt: 'Download matching hostnames only (one per line).',
+        tip_col_host: 'Normalized candidate hostname. Click any row to inspect the complete raw JSON finding.',
+        tip_col_status: 'Final Fastly verification status derived from DNS, HTTP Fastly-Debug headers, and direct-IP SNI probing.',
+        tip_col_http: 'HTTP status code returned by the Fastly edge probe.',
+        tip_col_sni: 'Whether direct-IP TLS handshake with SNI + Host presented a valid matching certificate (true/false).',
+        tip_col_ip: 'Primary Fastly IPv4/IPv6 address resolved for this host.',
+        tip_col_cname: 'Matched Fastly CNAME target in the DNS chain (e.g. *.sni.global.fastly.net).',
+        tip_col_pop: 'Fastly edge POP identifier seen in X-Served-By (e.g. cache-ams...).',
+        tip_col_issuer: 'TLS certificate issuer CA observed at the Fastly edge (e.g. Certainly Intermediate R1).',
+        tip_col_sources: 'Free sources that discovered this candidate hostname.'
+      }
+    }
+  };
+
   const $ = id => document.getElementById(id);
+  let lang = localStorage.getItem('ff_lang') === 'en' ? 'en' : 'fa';
   let mode = 'domain';
   let allFindings = [];
   let activeFile = '';
+  let lastStatusData = null;
   let pollTimer = null;
   let wasRunning = false;
+
+  function dict() { return I18N[lang] || I18N.fa; }
+
+  function applyLang(next) {
+    lang = next === 'en' ? 'en' : 'fa';
+    localStorage.setItem('ff_lang', lang);
+    document.documentElement.lang = lang;
+    document.documentElement.dir = lang === 'fa' ? 'rtl' : 'ltr';
+    const d = dict();
+
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+      const k = el.getAttribute('data-i18n');
+      if (d[k]) el.textContent = d[k];
+    });
+    document.querySelectorAll('[data-i18n-ph]').forEach(el => {
+      const k = el.getAttribute('data-i18n-ph');
+      if (d[k]) el.placeholder = d[k];
+    });
+    $('langBtn').textContent = d.lang_btn;
+    $('loginLangBtn').textContent = d.lang_btn;
+
+    // Update localized status filter option labels while keeping exact API filter values.
+    const sf = $('statusFilter');
+    Array.from(sf.options).forEach(opt => {
+      if (!opt.value) opt.textContent = d.opt_all;
+      else opt.textContent = d.statuses[opt.value] || opt.value;
+    });
+
+    if (lastStatusData) renderStatusData(lastStatusData);
+    else {
+      $('runStatePill').textContent = d.states.idle;
+      $('logsBox').textContent = d.ready;
+    }
+    renderTable();
+  }
+
+  $('langBtn').addEventListener('click', () => applyLang(lang === 'fa' ? 'en' : 'fa'));
+  $('loginLangBtn').addEventListener('click', () => applyLang(lang === 'fa' ? 'en' : 'fa'));
+
+  // Floating hover/focus tooltip engine for all [data-tip] elements.
+  const tipBox = $('hoverTip');
+  let tipTarget = null;
+  let tipTimer = null;
+
+  function positionTip(el) {
+    const r = el.getBoundingClientRect();
+    const tr = tipBox.getBoundingClientRect();
+    const pad = 10;
+    let top = r.bottom + 8;
+    if (top + tr.height > window.innerHeight - pad) {
+      top = Math.max(pad, r.top - tr.height - 8);
+    }
+    let left = document.documentElement.dir === 'rtl' ? (r.right - tr.width) : r.left;
+    if (left + tr.width > window.innerWidth - pad) left = window.innerWidth - tr.width - pad;
+    if (left < pad) left = pad;
+    tipBox.style.top = Math.round(top) + 'px';
+    tipBox.style.left = Math.round(left) + 'px';
+  }
+
+  function showTip(el) {
+    const key = el.getAttribute('data-tip');
+    const msg = key && dict().tips[key];
+    if (!msg) return;
+    tipTarget = el;
+    clearTimeout(tipTimer);
+    tipTimer = setTimeout(() => {
+      tipBox.textContent = msg;
+      tipBox.classList.add('visible');
+      tipBox.setAttribute('aria-hidden', 'false');
+      positionTip(el);
+    }, 60);
+  }
+
+  function hideTip() {
+    clearTimeout(tipTimer);
+    tipTarget = null;
+    tipBox.classList.remove('visible');
+    tipBox.setAttribute('aria-hidden', 'true');
+  }
+
+  document.addEventListener('mouseover', e => {
+    const el = e.target.closest && e.target.closest('[data-tip]');
+    if (!el) return;
+    if (el !== tipTarget) showTip(el);
+  });
+  document.addEventListener('mouseout', e => {
+    if (!tipTarget) return;
+    const rel = e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('[data-tip]');
+    if (!rel || rel !== tipTarget) hideTip();
+  });
+  document.addEventListener('focusin', e => {
+    const el = e.target.closest && e.target.closest('[data-tip]');
+    if (el) showTip(el);
+  });
+  document.addEventListener('focusout', hideTip);
+  window.addEventListener('scroll', hideTip, true);
 
   async function api(path, opts = {}) {
     const headers = Object.assign({'X-Requested-With': 'fastly-finder'}, opts.headers || {});
@@ -334,28 +682,34 @@
     try { await api('/api/scan/cancel', {method: 'POST'}); } catch (err) { alert(err.message); }
   });
 
+  function renderStatusData(s) {
+    const d = dict();
+    $('startBtn').disabled = !!s.running;
+    $('cancelBtn').disabled = !s.running;
+    const rawState = s.state || 'idle';
+    const pill = $('runStatePill');
+    pill.textContent = d.states[rawState] || rawState;
+    pill.className = 'pill ' + (s.running ? 'info' : rawState === 'completed' ? 'ok' : rawState === 'error' ? 'bad' : '');
+    $('statusMsg').textContent = s.message || '';
+    const pct = s.total > 0 ? Math.min(100, Math.round((s.done / s.total) * 100)) : (s.running ? 15 : (rawState === 'completed' ? 100 : 0));
+    $('progressBar').style.width = pct + '%';
+    if (Array.isArray(s.logs)) {
+      $('logsBox').textContent = s.logs.join('\n') || d.ready;
+      $('logsBox').scrollTop = $('logsBox').scrollHeight;
+    }
+    const c = s.counts || {};
+    $('kpiConfirmed').textContent = c.confirmed || 0;
+    $('kpiHidden').textContent = c.fastly_dns_headers_hidden || 0;
+    $('kpiUnknown').textContent = c.unknown_domain || 0;
+    $('kpiUnreach').textContent = c.dns_only_unreachable || 0;
+    $('kpiCand').textContent = (s.candidates || 0) + ' / ' + (s.fastly_dns || 0);
+  }
+
   async function pollStatus() {
     try {
       const s = await api('/api/status');
-      $('startBtn').disabled = !!s.running;
-      $('cancelBtn').disabled = !s.running;
-      const pill = $('runStatePill');
-      pill.textContent = s.state || 'idle';
-      pill.className = 'pill ' + (s.running ? 'info' : s.state === 'completed' ? 'ok' : s.state === 'error' ? 'bad' : '');
-      $('statusMsg').textContent = s.message || '';
-      const pct = s.total > 0 ? Math.min(100, Math.round((s.done / s.total) * 100)) : (s.running ? 15 : (s.state === 'completed' ? 100 : 0));
-      $('progressBar').style.width = pct + '%';
-      if (Array.isArray(s.logs)) {
-        $('logsBox').textContent = s.logs.join('\n') || 'Ready.';
-        $('logsBox').scrollTop = $('logsBox').scrollHeight;
-      }
-      const c = s.counts || {};
-      $('kpiConfirmed').textContent = c.confirmed || 0;
-      $('kpiHidden').textContent = c.fastly_dns_headers_hidden || 0;
-      $('kpiUnknown').textContent = c.unknown_domain || 0;
-      $('kpiUnreach').textContent = c.dns_only_unreachable || 0;
-      $('kpiCand').textContent = (s.candidates || 0) + ' / ' + (s.fastly_dns || 0);
-
+      lastStatusData = s;
+      renderStatusData(s);
       if (wasRunning && !s.running) {
         refreshFiles();
         if (!activeFile) loadResults('');
@@ -372,7 +726,8 @@
       sel.innerHTML = '';
       const def = document.createElement('option');
       def.value = '';
-      def.textContent = 'Current / Active Scan';
+      def.setAttribute('data-i18n', 'opt_current');
+      def.textContent = dict().opt_current;
       sel.appendChild(def);
       (res.files || []).forEach(f => {
         const opt = document.createElement('option');
@@ -400,7 +755,7 @@
 
   function statusPill(st) {
     const span = document.createElement('span');
-    span.textContent = st;
+    span.textContent = dict().statuses[st] || st;
     const cls = st === 'confirmed' ? 'ok' : st === 'unknown_domain' ? 'warn' : st === 'dns_only_unreachable' ? 'bad' : 'info';
     span.className = 'pill ' + cls;
     return span;
@@ -418,7 +773,7 @@
       if (sniOnly && !f.edge_sni_cert_match) return false;
       if (!q) return true;
       const hay = [
-        f.host, f.status,
+        f.host, f.status, dict().statuses[f.status] || '',
         (f.fastly_ips || []).join(' '),
         (f.fastly_cnames || []).join(' '),
         (f.fastly_headers && f.fastly_headers['X-Served-By']) || '',
@@ -440,7 +795,7 @@
         {text: (f.fastly_cnames && f.fastly_cnames[0]) || '-', cls: 'mono'},
         {text: (f.fastly_headers && f.fastly_headers['X-Served-By']) || '-', cls: 'mono'},
         {text: f.tls_issuer || '-'},
-        {text: (f.sources || []).join(',')}
+        {text: (f.sources || []).join(','), cls: 'mono'}
       ];
       cells.forEach(c => {
         const td = document.createElement('td');
@@ -476,6 +831,7 @@
   $('closeModalBtn').addEventListener('click', () => $('detailModal').classList.add('hidden'));
   $('detailModal').addEventListener('click', e => { if (e.target === $('detailModal')) $('detailModal').classList.add('hidden'); });
 
+  applyLang(lang);
   api('/api/me').then(me => showApp(me.user)).catch(showLogin);
 })();
 </script>

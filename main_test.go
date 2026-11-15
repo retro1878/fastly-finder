@@ -486,4 +486,13 @@ func TestWebAuthTLSAndSandbox(t *testing.T) {
 	if expRec.Code != http.StatusOK || !strings.Contains(expRec.Body.String(), "cdn.example.com") {
 		t.Fatalf("unexpected export response %d: %s", expRec.Code, expRec.Body.String())
 	}
+
+	// Embedded bilingual Persian-default + tooltip UI
+	idxReq := httptest.NewRequest(http.MethodGet, "/", nil)
+	idxRec := httptest.NewRecorder()
+	ws.handleIndex(idxRec, idxReq)
+	body := idxRec.Body.String()
+	if idxRec.Code != http.StatusOK || !strings.Contains(body, `lang="fa" dir="rtl"`) || !strings.Contains(body, "hoverTip") || !strings.Contains(body, "tip_with_www") {
+		t.Fatalf("embedded UI missing expected bilingual/tooltip markup (status=%d)", idxRec.Code)
+	}
 }
