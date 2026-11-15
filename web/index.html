@@ -16,21 +16,27 @@
   body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.55}
   .hidden{display:none!important}
   header{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:12px 20px;background:var(--panel);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:20}
-  .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px;flex-wrap:wrap}
+  .header-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
   .dot{width:10px;height:10px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px var(--accent);flex-shrink:0}
   .pill{font-size:11px;padding:2px 8px;border-radius:999px;background:var(--panel2);border:1px solid var(--border);color:var(--muted)}
   .pill.ok{color:#86efac;border-color:#166534;background:#052e16}
   .pill.warn{color:#fde68a;border-color:#854d0e;background:#291a03}
   .pill.bad{color:#fca5a5;border-color:#991b1b;background:#2b0909}
   .pill.info{color:#7dd3fc;border-color:#075985;background:#082235}
-  main{max-width:1360px;margin:0 auto;padding:18px;display:grid;gap:16px}
-  .card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px}
+  main{max-width:1360px;margin:0 auto;padding:18px;display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
+  main>*{min-width:0}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px;min-width:0}
   .row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
   .col{display:flex;flex-direction:column;gap:6px;flex:1;min-width:180px}
+  .num-col{flex:0 1 180px;min-width:140px;max-width:210px}
+  .checks-inline{padding-top:18px;flex:1 1 320px;min-width:0}
+  .actions-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+  #statusMsg{flex:1 1 200px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--muted)}
   label{font-size:12px;color:var(--muted);display:inline-flex;align-items:center;gap:5px}
   input[type=text],input[type=password],input[type=number],select,textarea{
     background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:7px;
-    padding:8px 10px;font-family:inherit;font-size:13px;outline:none
+    padding:8px 10px;font-family:inherit;font-size:13px;outline:none;max-width:100%
   }
   input[type=number],input.ltr,textarea.ltr{direction:ltr;text-align:left}
   input:focus,select:focus,textarea:focus{border-color:var(--info)}
@@ -47,25 +53,33 @@
   .tabs{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;border-bottom:1px solid var(--border);padding-bottom:10px}
   .tab{background:transparent;border:1px solid transparent;color:var(--muted);padding:6px 12px}
   .tab.active{background:var(--panel2);border-color:var(--border);color:var(--text)}
-  .checks{display:flex;flex-wrap:wrap;gap:10px}
+  .checks{display:flex;flex-wrap:wrap;gap:8px}
   .chk{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--text);background:var(--bg);border:1px solid var(--border);padding:5px 10px;border-radius:7px;cursor:pointer;user-select:none}
   .chk:hover{border-color:#3b4f73}
-  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
-  .kpi{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px 14px;transition:border-color .15s}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;min-width:0}
+  .kpi{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:12px 14px;transition:border-color .15s;min-width:0}
   .kpi:hover{border-color:#3b4f73}
   .kpi .lbl{font-size:11px;color:var(--muted);letter-spacing:.02em;display:flex;align-items:center;justify-content:space-between;gap:6px}
-  .kpi .val{font-size:22px;font-weight:700;margin-top:4px;font-family:var(--mono);direction:ltr;text-align:start}
+  .kpi .val{font-size:22px;font-weight:700;margin-top:4px;font-family:var(--mono);direction:ltr;text-align:start;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .progress-wrap{height:8px;background:var(--bg);border-radius:999px;overflow:hidden;border:1px solid var(--border);margin:10px 0}
   .progress-bar{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),#fb923c);transition:width .25s}
   .logs{background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:10px;font-family:var(--mono);font-size:11.5px;max-height:140px;overflow:auto;color:#b6c3d8;white-space:pre-wrap;direction:ltr;text-align:left}
-  .table-wrap{overflow:auto;border:1px solid var(--border);border-radius:8px;max-height:540px}
-  table{width:100%;border-collapse:collapse;font-size:12.5px}
-  th,td{padding:8px 10px;border-bottom:1px solid var(--border);text-align:start;white-space:nowrap}
+  .toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .toolbar-group{display:flex;flex-wrap:wrap;gap:8px;align-items:center;flex:1 1 auto;min-width:0}
+  .search-input{flex:1 1 240px;min-width:0}
+  .files-select{flex:1 1 210px;min-width:0;max-width:340px}
+  .exp-btns{display:flex;gap:6px;flex-wrap:wrap}
+  .table-wrap{overflow:auto;border:1px solid var(--border);border-radius:8px;max-height:540px;width:100%;max-width:100%}
+  table{width:100%;min-width:860px;border-collapse:collapse;font-size:12.5px;table-layout:fixed}
+  th,td{padding:8px 10px;border-bottom:1px solid var(--border);text-align:start;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  td .pill{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
   th{background:var(--panel2);color:var(--muted);font-weight:600;position:sticky;top:0;z-index:5}
   th[data-tip]{cursor:help}
   tbody tr{cursor:pointer}
   tbody tr:hover{background:#162033}
   .mono{font-family:var(--mono);direction:ltr;unicode-bidi:isolate}
+  .ltr-cell{direction:ltr;unicode-bidi:isolate}
+  [dir="rtl"] .ltr-cell,[dir="rtl"] td.mono{text-align:right}
   #loginWrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
   #loginCard{width:100%;max-width:380px}
   .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;padding:20px;z-index:50}
@@ -75,12 +89,35 @@
   pre{margin:0;background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:12px;font-family:var(--mono);font-size:12px;overflow:auto;white-space:pre-wrap;word-break:break-word;direction:ltr;text-align:left}
   .tip-badge{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;border:1px solid #354666;color:#9ab0d1;font-size:10px;font-weight:700;line-height:1;opacity:.85;flex-shrink:0}
   #hoverTip{
-    position:fixed;z-index:100;max-width:320px;padding:9px 12px;border-radius:8px;
+    position:fixed;z-index:100;max-width:min(380px,calc(100vw - 20px));padding:9px 12px;border-radius:8px;
     background:#0c1424;border:1px solid #38507a;color:#e8effa;font-size:12px;line-height:1.5;
     box-shadow:0 12px 28px rgba(0,0,0,.55);pointer-events:none;opacity:0;transform:translateY(3px);
-    transition:opacity .12s ease,transform .12s ease;white-space:normal
+    transition:opacity .12s ease,transform .12s ease;white-space:normal;overflow-wrap:anywhere
   }
   #hoverTip.visible{opacity:1;transform:translateY(0)}
+  #hoverTip.mono-tip{font-family:var(--mono);direction:ltr;text-align:left;unicode-bidi:plaintext}
+  @media (max-width: 900px){
+    .num-col{flex:1 1 160px;max-width:none}
+    .checks-inline{padding-top:0;flex-basis:100%}
+    .toolbar-group{flex:1 1 100%}
+  }
+  @media (max-width: 640px){
+    header{padding:10px 14px}
+    .header-actions{width:100%;justify-content:space-between}
+    main{padding:10px;gap:12px}
+    .card{padding:12px;border-radius:9px}
+    .tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+    .tab{padding:7px 6px;font-size:12px;text-align:center}
+    .kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+    .kpi{padding:10px}
+    .kpi:last-child{grid-column:1 / -1}
+    .num-col{flex:1 1 calc(50% - 6px);min-width:120px}
+    .actions-row button{flex:1 1 120px}
+    .search-input,.files-select,#statusFilter{width:100%;flex:1 1 100%;max-width:none}
+    .exp-btns{width:100%;display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
+    .modal-bg{padding:10px}
+    .modal{max-height:92vh}
+  }
 </style>
 </head>
 <body>
@@ -110,7 +147,7 @@
       <span class="pill ok">HTTPS</span>
       <span id="runStatePill" class="pill" data-tip="tip_run_state">idle</span>
     </div>
-    <div class="row">
+    <div class="header-actions">
       <button id="langBtn" class="lang-btn" type="button" data-tip="tip_lang">EN / فارسی</button>
       <span id="userLabel" class="pill"></span>
       <button id="logoutBtn" type="button" data-i18n="logout" data-tip="tip_logout">خروج</button>
@@ -142,11 +179,11 @@
           <label class="chk" data-tip="tip_seed_ct_logs"><input type="checkbox" value="ct-logs"> ct-logs <span class="tip-badge">?</span></label>
         </div>
         <div class="row">
-          <div class="col" style="max-width:200px">
+          <div class="col num-col">
             <label for="limitInput" data-tip="tip_limit"><span data-i18n="lbl_limit">سقف هر منبع (0 = همه)</span><span class="tip-badge">?</span></label>
             <input id="limitInput" type="number" min="0" value="20000" data-tip="tip_limit">
           </div>
-          <div class="col" style="max-width:200px">
+          <div class="col num-col">
             <label for="ctEntriesInput" data-tip="tip_ct_entries"><span data-i18n="lbl_ct_entries">گواهی‌های اخیر هر CT Log</span><span class="tip-badge">?</span></label>
             <input id="ctEntriesInput" type="number" min="100" value="5000" data-tip="tip_ct_entries">
           </div>
@@ -159,15 +196,15 @@
       </div>
 
       <div class="row" style="margin-bottom:12px">
-        <div class="col" style="max-width:170px">
+        <div class="col num-col">
           <label for="dnsWorkersInput" data-tip="tip_dns_workers"><span data-i18n="lbl_dns_workers">کارگرهای همزمان DNS</span><span class="tip-badge">?</span></label>
           <input id="dnsWorkersInput" type="number" min="1" max="1000" value="150" data-tip="tip_dns_workers">
         </div>
-        <div class="col" style="max-width:170px">
+        <div class="col num-col">
           <label for="httpWorkersInput" data-tip="tip_http_workers"><span data-i18n="lbl_http_workers">کارگرهای همزمان HTTP</span><span class="tip-badge">?</span></label>
           <input id="httpWorkersInput" type="number" min="1" max="500" value="40" data-tip="tip_http_workers">
         </div>
-        <div class="checks" style="padding-top:16px">
+        <div class="checks checks-inline">
           <label class="chk" data-tip="tip_with_www"><input id="withWWWCheck" type="checkbox" checked> <span data-i18n="chk_www">افزودن www.</span> <span class="tip-badge">?</span></label>
           <label class="chk" data-tip="tip_doh"><input id="dohCheck" type="checkbox"> <span data-i18n="chk_doh">DNS از مسیر DoH</span> <span class="tip-badge">?</span></label>
           <label class="chk" data-tip="tip_bgp"><input id="bgpCheck" type="checkbox"> <span data-i18n="chk_bgp">رنج‌های BGP</span> <span class="tip-badge">?</span></label>
@@ -176,10 +213,10 @@
         </div>
       </div>
 
-      <div class="row">
+      <div class="actions-row">
         <button id="startBtn" class="primary" type="button" data-i18n="btn_start" data-tip="tip_start">شروع اسکن</button>
         <button id="cancelBtn" type="button" disabled data-i18n="btn_cancel" data-tip="tip_cancel">توقف</button>
-        <span id="statusMsg" class="mono" style="font-size:12px;color:var(--muted)"></span>
+        <span id="statusMsg" class="mono"></span>
       </div>
 
       <div class="progress-wrap"><div id="progressBar" class="progress-bar"></div></div>
@@ -195,9 +232,9 @@
     </section>
 
     <section class="card">
-      <div class="row" style="justify-content:space-between;margin-bottom:12px">
-        <div class="row">
-          <input id="searchInput" type="text" data-i18n-ph="ph_search" placeholder="جستجو در هاست، IP، CNAME، POP، صادرکننده، منبع..." style="min-width:260px" data-tip="tip_search">
+      <div class="toolbar">
+        <div class="toolbar-group">
+          <input id="searchInput" class="search-input" type="text" data-i18n-ph="ph_search" placeholder="جستجو در هاست، IP، CNAME، POP، صادرکننده، منبع..." data-tip="tip_search">
           <select id="statusFilter" data-tip="tip_status_filter">
             <option value="" data-i18n="opt_all">همه وضعیت‌ها</option>
             <option value="confirmed">confirmed</option>
@@ -208,18 +245,31 @@
           </select>
           <label class="chk" data-tip="tip_sni_filter"><input id="sniOnlyCheck" type="checkbox"> <span data-i18n="chk_sni_only">تطبیق گواهی SNI</span> <span class="tip-badge">?</span></label>
         </div>
-        <div class="row">
-          <select id="savedFilesSelect" style="min-width:220px" data-tip="tip_saved_files">
+        <div class="toolbar-group" style="justify-content:flex-end">
+          <select id="savedFilesSelect" class="files-select" data-tip="tip_saved_files">
             <option value="" data-i18n="opt_current">اسکن جاری / فعال</option>
           </select>
-          <button type="button" data-exp="jsonl" data-tip="tip_exp_jsonl">JSONL</button>
-          <button type="button" data-exp="csv" data-tip="tip_exp_csv">CSV</button>
-          <button type="button" data-exp="txt" data-tip="tip_exp_txt">TXT</button>
+          <div class="exp-btns">
+            <button type="button" data-exp="jsonl" data-tip="tip_exp_jsonl">JSONL</button>
+            <button type="button" data-exp="csv" data-tip="tip_exp_csv">CSV</button>
+            <button type="button" data-exp="txt" data-tip="tip_exp_txt">TXT</button>
+          </div>
         </div>
       </div>
 
       <div class="table-wrap">
         <table>
+          <colgroup>
+            <col style="width:19%">
+            <col style="width:13%">
+            <col style="width:6%">
+            <col style="width:6%">
+            <col style="width:12%">
+            <col style="width:16%">
+            <col style="width:12%">
+            <col style="width:9%">
+            <col style="width:7%">
+          </colgroup>
           <thead>
             <tr>
               <th data-tip="tip_col_host" data-i18n="col_host">هاست</th>
@@ -548,34 +598,54 @@
     tipBox.style.left = Math.round(left) + 'px';
   }
 
-  function showTip(el) {
+  function showTip(el, overrideText, isMono) {
     const key = el.getAttribute('data-tip');
-    const msg = key && dict().tips[key];
+    const msg = overrideText !== undefined ? overrideText : (key && dict().tips[key]);
     if (!msg) return;
     tipTarget = el;
     clearTimeout(tipTimer);
     tipTimer = setTimeout(() => {
+      tipBox.classList.toggle('mono-tip', !!isMono);
       tipBox.textContent = msg;
       tipBox.classList.add('visible');
       tipBox.setAttribute('aria-hidden', 'false');
       positionTip(el);
-    }, 60);
+    }, overrideText !== undefined ? 40 : 60);
   }
 
   function hideTip() {
     clearTimeout(tipTimer);
     tipTarget = null;
-    tipBox.classList.remove('visible');
+    tipBox.classList.remove('visible', 'mono-tip');
     tipBox.setAttribute('aria-hidden', 'true');
   }
 
+  function resolveTruncatedHover(target) {
+    if (!target || !target.closest) return null;
+    const cell = target.closest('td[data-full], .pill[data-full], #statusMsg');
+    if (!cell) return null;
+    const full = cell.id === 'statusMsg' ? cell.textContent : cell.getAttribute('data-full');
+    if (!full || full === '-') return null;
+    if (cell.scrollWidth > cell.clientWidth + 1) {
+      return {el: cell, text: full, mono: cell.classList.contains('mono') || cell.id === 'statusMsg'};
+    }
+    return null;
+  }
+
   document.addEventListener('mouseover', e => {
+    const trunc = resolveTruncatedHover(e.target);
+    if (trunc) {
+      if (trunc.el !== tipTarget) showTip(trunc.el, trunc.text, trunc.mono);
+      return;
+    }
     const el = e.target.closest && e.target.closest('[data-tip]');
     if (!el) return;
     if (el !== tipTarget) showTip(el);
   });
   document.addEventListener('mouseout', e => {
     if (!tipTarget) return;
+    const trunc = resolveTruncatedHover(e.relatedTarget);
+    if (trunc && trunc.el === tipTarget) return;
     const rel = e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('[data-tip]');
     if (!rel || rel !== tipTarget) hideTip();
   });
@@ -755,7 +825,9 @@
 
   function statusPill(st) {
     const span = document.createElement('span');
-    span.textContent = dict().statuses[st] || st;
+    const label = dict().statuses[st] || st;
+    span.textContent = label;
+    span.setAttribute('data-full', label);
     const cls = st === 'confirmed' ? 'ok' : st === 'unknown_domain' ? 'warn' : st === 'dns_only_unreachable' ? 'bad' : 'info';
     span.className = 'pill ' + cls;
     return span;
@@ -791,17 +863,20 @@
         {node: statusPill(f.status)},
         {text: f.http_status ? String(f.http_status) : '-', cls: 'mono'},
         {text: f.edge_sni_cert_match ? 'true' : 'false', cls: 'mono'},
-        {text: (f.fastly_ips && f.fastly_ips[0]) || '-', cls: 'mono'},
-        {text: (f.fastly_cnames && f.fastly_cnames[0]) || '-', cls: 'mono'},
+        {text: (f.fastly_ips && f.fastly_ips.length ? f.fastly_ips.join(', ') : '-'), cls: 'mono'},
+        {text: (f.fastly_cnames && f.fastly_cnames.length ? f.fastly_cnames.join(', ') : '-'), cls: 'mono'},
         {text: (f.fastly_headers && f.fastly_headers['X-Served-By']) || '-', cls: 'mono'},
-        {text: f.tls_issuer || '-'},
-        {text: (f.sources || []).join(','), cls: 'mono'}
+        {text: f.tls_issuer || '-', cls: 'ltr-cell'},
+        {text: (f.sources && f.sources.length ? f.sources.join(', ') : '-'), cls: 'mono'}
       ];
       cells.forEach(c => {
         const td = document.createElement('td');
         if (c.cls) td.className = c.cls;
         if (c.node) td.appendChild(c.node);
-        else td.textContent = c.text;
+        else {
+          td.textContent = c.text;
+          td.setAttribute('data-full', c.text);
+        }
         tr.appendChild(td);
       });
       tr.addEventListener('click', () => {
