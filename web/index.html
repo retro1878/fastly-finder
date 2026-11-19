@@ -241,6 +241,7 @@
             <option value="fastly_dns_headers_hidden">fastly_dns_headers_hidden</option>
             <option value="unknown_domain">unknown_domain</option>
             <option value="dns_only_unreachable">dns_only_unreachable</option>
+            <option value="edge_configured_off_dns">edge_configured_off_dns</option>
             <option value="fastly_dns">fastly_dns</option>
           </select>
           <label class="chk" data-tip="tip_sni_filter"><input id="sniOnlyCheck" type="checkbox"> <span data-i18n="chk_sni_only">تطبیق گواهی SNI</span> <span class="tip-badge">?</span></label>
@@ -286,6 +287,7 @@
           <tbody id="resultsBody"></tbody>
         </table>
       </div>
+      <div id="tableNotice" class="hidden" style="font-size:12px;color:var(--muted);margin-top:8px"></div>
     </section>
   </main>
 </div>
@@ -350,6 +352,8 @@
       btn_close: 'بستن',
       ready: 'آماده.',
       lang_btn: 'EN / فارسی',
+      err_no_seeds: 'حداقل یک منبع کشف سراسری را انتخاب کنید.',
+      trunc_notice: (shown, total) => 'نمایش ' + shown + ' از ' + total + ' ردیف (برای مشاهده همه از فیلتر یا دانلود خروجی استفاده کنید).',
       states: {
         idle: 'آماده',
         running: 'در حال اجرا',
@@ -362,6 +366,7 @@
         fastly_dns_headers_hidden: 'DNS فستلی / هدر مخفی',
         unknown_domain: 'دامنه ثبت‌نشده (Unknown Domain)',
         dns_only_unreachable: 'DNS فستلی / غیرقابل‌دسترس',
+        edge_configured_off_dns: 'لبه فعال (خارج از DNS)',
         fastly_dns: 'فقط تطبیق DNS'
       },
       tips: {
@@ -387,7 +392,7 @@
         tip_hosts_input: 'هر نام میزبان را در یک خط بنویسید (یا لینک بچسبانید). آدرس‌ها پاکسازی و یکتا شده و مستقیماً وارد مرحله DNS و پروب فستلی می‌شوند.',
         tip_dns_workers: 'تعداد رشته‌های همزمان (Goroutine) برای پرس‌وجوی رکوردهای DNS. روی سرورهای سریع ۱۵۰ تا ۳۰۰ مناسب است؛ مقدار خیلی بالا ممکن است باعث محدودیت نرخ DNS شود.',
         tip_http_workers: 'تعداد کارگرهای همزمان برای ارسال درخواست HTTP با هدر Fastly-Debug: 1 و پروب مستقیم TLS SNI به لبه Fastly.',
-        tip_with_www: 'برای دامنه‌های اصلی در منابع سراسری (مثل Tranco و CrUX)، به‌صورت خودکار معادل www.<domain> را هم اضافه و تست می‌کند چون بسیاری از سایت‌ها فقط www را روی CDN می‌گذارند.',
+        tip_with_www: 'برای دامنه‌های اصلی در منابع سراسری (مثل Tranco و Majestic)، به‌صورت خودکار معادل www.<domain> را هم اضافه و تست می‌کند چون بسیاری از سایت‌ها فقط www را روی CDN می‌گذارند.',
         tip_doh: 'به جای ارسال کوئری UDP روی پورت ۵۳، از DNS-over-HTTPS (سرویس dns.google) استفاده می‌کند؛ مناسب شبکه‌هایی که UDP/53 را محدود یا فیلتر کرده‌اند.',
         tip_bgp: 'پیشوندهای IP اعلام‌شده در BGP برای ASNهای رسمی فستلی (AS54113 و AS394192) را از RIPEstat هم ادغام می‌کند تا رنج‌های تازه هم شناسایی شوند.',
         tip_skip_probe: 'فقط تطبیق DNS (رکوردهای CNAME و رنج IP فستلی) را انجام می‌دهد و درخواست HTTP یا TLS SNI ارسال نمی‌کند؛ بسیار سریع برای غربالگری اولیه.',
@@ -461,6 +466,8 @@
       btn_close: 'Close',
       ready: 'Ready.',
       lang_btn: 'فارسی / EN',
+      err_no_seeds: 'Select at least one global seed.',
+      trunc_notice: (shown, total) => 'Showing ' + shown + ' of ' + total + ' rows (filter or export to view all).',
       states: {
         idle: 'idle',
         running: 'running',
@@ -473,6 +480,7 @@
         fastly_dns_headers_hidden: 'fastly_dns_headers_hidden',
         unknown_domain: 'unknown_domain',
         dns_only_unreachable: 'dns_only_unreachable',
+        edge_configured_off_dns: 'edge_configured_off_dns',
         fastly_dns: 'fastly_dns'
       },
       tips: {
@@ -498,7 +506,7 @@
         tip_hosts_input: 'Paste candidate hostnames (or URLs), one per line. Normalized and deduplicated before DNS and Fastly edge verification.',
         tip_dns_workers: 'Number of concurrent goroutines resolving A/AAAA/CNAME records. 150–300 works well on fast VPS links; excessive values can rate-limit UDP resolvers.',
         tip_http_workers: 'Number of concurrent workers sending Fastly-Debug: 1 HTTP requests and direct-IP edge SNI/Host TLS probes.',
-        tip_with_www: 'Automatically also tests www.<domain> for apex-only global seeds (Tranco, CrUX, Majestic), catching sites that only put www on Fastly.',
+        tip_with_www: 'Automatically also tests www.<domain> for apex-only global seeds (Tranco, Majestic), catching sites that only put www on Fastly.',
         tip_doh: 'Resolves DNS via HTTPS JSON (dns.google) instead of UDP port 53. Helpful when UDP/53 is filtered or rate-limited.',
         tip_bgp: 'Merges live BGP prefixes announced by Fastly ASNs (AS54113, AS394192) from RIPEstat alongside official Fastly IP ranges.',
         tip_skip_probe: 'Runs DNS CNAME/CIDR matching only and skips HTTP + direct-IP TLS edge verification probes.',
@@ -538,7 +546,9 @@
   let activeFile = '';
   let lastStatusData = null;
   let pollTimer = null;
+  let polling = false;
   let wasRunning = false;
+  let lastLoadedScanID = 0;
 
   function dict() { return I18N[lang] || I18N.fa; }
 
@@ -657,12 +667,15 @@
   window.addEventListener('scroll', hideTip, true);
 
   async function api(path, opts = {}) {
-    const headers = Object.assign({'X-Requested-With': 'fastly-finder'}, opts.headers || {});
-    if (opts.body && typeof opts.body === 'object') {
+    const reqOpts = Object.assign({}, opts);
+    const headers = Object.assign({}, opts.headers || {}, {'X-Requested-With': 'fastly-finder'});
+    if (reqOpts.body && typeof reqOpts.body === 'object') {
       headers['Content-Type'] = 'application/json';
-      opts.body = JSON.stringify(opts.body);
+      reqOpts.body = JSON.stringify(reqOpts.body);
     }
-    const r = await fetch(path, Object.assign({credentials: 'same-origin', headers}, opts));
+    reqOpts.credentials = 'same-origin';
+    reqOpts.headers = headers;
+    const r = await fetch(path, reqOpts);
     if (r.status === 401 && path !== '/api/login') {
       showLogin();
       throw new Error('unauthorized');
@@ -674,10 +687,19 @@
     return data;
   }
 
+  function clearPoll() {
+    if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+  }
+
+  function schedulePoll(ms) {
+    clearPoll();
+    pollTimer = setTimeout(pollStatus, ms);
+  }
+
   function showLogin() {
     $('appWrap').classList.add('hidden');
     $('loginWrap').classList.remove('hidden');
-    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    clearPoll();
   }
 
   function showApp(user) {
@@ -685,9 +707,8 @@
     $('appWrap').classList.remove('hidden');
     $('userLabel').textContent = user || 'admin';
     refreshFiles();
-    pollStatus();
     loadResults('');
-    if (!pollTimer) pollTimer = setInterval(pollStatus, 1500);
+    pollStatus();
   }
 
   $('loginForm').addEventListener('submit', async e => {
@@ -738,10 +759,17 @@
       only_confirmed: $('onlyConfirmedCheck').checked,
       aaaa: true
     };
+    if (payload.global && payload.seeds.length === 0) {
+      alert(dict().err_no_seeds);
+      return;
+    }
     try {
       await api('/api/scan/start', {method: 'POST', body: payload});
       activeFile = '';
       $('savedFilesSelect').value = '';
+      allFindings = [];
+      renderTable();
+      wasRunning = true;
       pollStatus();
     } catch (err) {
       alert(err.message);
@@ -776,16 +804,30 @@
   }
 
   async function pollStatus() {
+    if (polling) return;
+    polling = true;
+    clearPoll();
+    let nextDelay = 10000;
     try {
       const s = await api('/api/status');
       lastStatusData = s;
       renderStatusData(s);
-      if (wasRunning && !s.running) {
+      nextDelay = s.running ? 1500 : 10000;
+      const finishedNew = !s.running && (wasRunning || (s.scan_id && s.scan_id !== lastLoadedScanID));
+      if (finishedNew) {
+        if (s.scan_id) lastLoadedScanID = s.scan_id;
         refreshFiles();
         if (!activeFile) loadResults('');
       }
       wasRunning = !!s.running;
-    } catch {}
+    } catch {
+      nextDelay = 5000;
+    } finally {
+      polling = false;
+      if (!$('appWrap').classList.contains('hidden')) {
+        schedulePoll(nextDelay);
+      }
+    }
   }
 
   async function refreshFiles() {
@@ -806,6 +848,7 @@
         sel.appendChild(opt);
       });
       sel.value = prev;
+      activeFile = sel.value;
     } catch {}
   }
 
@@ -887,12 +930,19 @@
       frag.appendChild(tr);
     });
     tbody.appendChild(frag);
+    const notice = $('tableNotice');
+    if (rows.length > 1000) {
+      notice.textContent = dict().trunc_notice(1000, rows.length);
+      notice.classList.remove('hidden');
+    } else {
+      notice.textContent = '';
+      notice.classList.add('hidden');
+    }
   }
 
-  ['searchInput', 'statusFilter', 'sniOnlyCheck'].forEach(id => {
-    $(id).addEventListener('input', renderTable);
-    $(id).addEventListener('change', renderTable);
-  });
+  $('searchInput').addEventListener('input', renderTable);
+  $('statusFilter').addEventListener('change', renderTable);
+  $('sniOnlyCheck').addEventListener('change', renderTable);
 
   document.querySelectorAll('button[data-exp]').forEach(btn => {
     btn.addEventListener('click', () => {

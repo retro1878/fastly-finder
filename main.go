@@ -59,7 +59,7 @@ func run(args []string) int {
 		webAuth         = fs.String("web-auth", "", "dashboard credentials user:pass (or FASTLY_FINDER_WEB_AUTH; random password generated if unset)")
 		webCert         = fs.String("web-cert", "", "TLS certificate PEM path for --web (or FASTLY_FINDER_WEB_CERT; supports live Certbot reload)")
 		webKey          = fs.String("web-key", "", "TLS private key PEM path for --web (or FASTLY_FINDER_WEB_KEY)")
-		webDir          = fs.String("web-dir", ".", "directory for saved/exported .jsonl files in the web dashboard")
+		webDir          = fs.String("web-dir", "scans", "directory for saved/exported .jsonl files in the web dashboard")
 	)
 
 	fs.Usage = func() {
@@ -183,6 +183,7 @@ func run(args []string) int {
 	}
 
 	var out io.Writer = os.Stdout
+	var outF *os.File
 	isTTY := false
 	if *outFile != "" {
 		f, err := os.Create(*outFile)
@@ -190,7 +191,7 @@ func run(args []string) int {
 			logf("error creating output %s: %v", *outFile, err)
 			return 1
 		}
-		defer f.Close()
+		outF = f
 		out = f
 	} else if st, err := os.Stdout.Stat(); err == nil && (st.Mode()&os.ModeCharDevice) != 0 {
 		isTTY = true
@@ -198,8 +199,17 @@ func run(args []string) int {
 
 	resolvedFmt := resolveOutputFormat(*format, *outFile, isTTY)
 	if err := writeFindings(out, resolvedFmt, outcome.Findings); err != nil {
+		if outF != nil {
+			_ = outF.Close()
+		}
 		logf("error writing output: %v", err)
 		return 1
+	}
+	if outF != nil {
+		if err := outF.Close(); err != nil {
+			logf("error closing output %s: %v", *outFile, err)
+			return 1
+		}
 	}
 	if doneMsg != "" {
 		logf("%s", doneMsg)
@@ -232,7 +242,6 @@ func resolveOutputFormat(requested, outFile string, isTTY bool) string {
 
 func writeFindings(w io.Writer, format string, findings []Finding) error {
 	bw := bufio.NewWriter(w)
-	defer bw.Flush()
 
 	switch strings.ToLower(strings.TrimSpace(format)) {
 	case "table":
@@ -255,7 +264,9 @@ func writeFindings(w io.Writer, format string, findings []Finding) error {
 				strOrDash(strings.Join(f.Sources, ",")),
 			)
 		}
-		return tw.Flush()
+		if err := tw.Flush(); err != nil {
+			return err
+		}
 	case "jsonl", "json":
 		enc := json.NewEncoder(bw)
 		for _, f := range findings {
@@ -277,24 +288,37 @@ func writeFindings(w io.Writer, format string, findings []Finding) error {
 		})
 		for _, f := range findings {
 			_ = cw.Write([]string{
-				f.Host,
-				f.Status,
-				strings.Join(f.FastlyCNAMEs, ";"),
-				strings.Join(f.FastlyIPs, ";"),
+				csvSafeCell(f.Host),
+				csvSafeCell(f.Status),
+				csvSafeCell(strings.Join(f.FastlyCNAMEs, ";")),
+				csvSafeCell(strings.Join(f.FastlyIPs, ";")),
 				fmt.Sprintf("%d", f.HTTPStatus),
-				f.FastlyHeaders["X-Served-By"],
-				f.TLSIssuer,
-				f.EdgeIPTested,
+				csvSafeCell(f.FastlyHeaders["X-Served-By"]),
+				csvSafeCell(f.TLSIssuer),
+				csvSafeCell(f.EdgeIPTested),
 				fmt.Sprintf("%t", f.EdgeSNICertMatch),
-				strings.Join(f.Sources, ";"),
+				csvSafeCell(strings.Join(f.Sources, ";")),
 			})
 		}
 		cw.Flush()
-		return cw.Error()
+		if err := cw.Error(); err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf("unsupported format %q (use auto, table, jsonl, csv, txt)", format)
 	}
-	return nil
+	return bw.Flush()
+}
+
+func csvSafeCell(s string) string {
+	if s == "" {
+		return s
+	}
+	switch s[0] {
+	case '=', '+', '-', '@', '\t', '\r':
+		return "'" + s
+	}
+	return s
 }
 
 func firstOrDash(items []string) string {
@@ -315,7 +339,11 @@ func truncateStr(s string, max int) string {
 	if max <= 3 || len(s) <= max {
 		return s
 	}
-	return s[:max-3] + "..."
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	return string(r[:max-3]) + "..."
 }
 
 func readLines(path string) ([]string, error) {

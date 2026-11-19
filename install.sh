@@ -40,15 +40,23 @@ Options:
 EOF
 }
 
+need_val() {
+  if [[ $# -lt 2 || -z "${2:-}" ]]; then
+    echo "[!] Missing value for $1" >&2
+    usage
+    exit 2
+  fi
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --addr) LISTEN_ADDR="$2"; shift 2 ;;
-    --auth) AUTH_CRED="$2"; shift 2 ;;
+    --addr) need_val "$@"; LISTEN_ADDR="$2"; shift 2 ;;
+    --auth) need_val "$@"; AUTH_CRED="$2"; shift 2 ;;
     --certbot) USE_CERTBOT=1; shift ;;
-    --certbot-ip) USE_CERTBOT=1; CERTBOT_IP="$2"; shift 2 ;;
-    --email) CERTBOT_EMAIL="$2"; shift 2 ;;
-    --version) VERSION="$2"; shift 2 ;;
-    --binary) LOCAL_BIN="$2"; shift 2 ;;
+    --certbot-ip) need_val "$@"; USE_CERTBOT=1; CERTBOT_IP="$2"; shift 2 ;;
+    --email) need_val "$@"; CERTBOT_EMAIL="$2"; shift 2 ;;
+    --version) need_val "$@"; VERSION="$2"; shift 2 ;;
+    --binary) need_val "$@"; LOCAL_BIN="$2"; shift 2 ;;
     --uninstall) UNINSTALL=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; usage; exit 2 ;;
@@ -62,7 +70,10 @@ fi
 
 if [[ "$UNINSTALL" -eq 1 ]]; then
   systemctl disable --now fastly-finder.service 2>/dev/null || true
-  rm -f "$UNIT_FILE" "$BIN_PATH" "$HOOK_FILE"
+  systemctl disable --now fastly-finder-certbot-renew.timer 2>/dev/null || true
+  rm -f "$UNIT_FILE" "$BIN_PATH" "$HOOK_FILE" \
+    /etc/systemd/system/fastly-finder-certbot-renew.service \
+    /etc/systemd/system/fastly-finder-certbot-renew.timer
   systemctl daemon-reload 2>/dev/null || true
   echo "[*] Removed fastly-finder service and binary."
   echo "[*] Config/data kept in ${ENV_DIR} and ${DATA_DIR} (remove manually if unwanted)."
@@ -77,18 +88,33 @@ case "$(uname -m)" in
 esac
 
 TMP_BIN="$(mktemp)"
-trap 'rm -f "$TMP_BIN"' EXIT
+TMP_SUMS="$(mktemp)"
+trap 'rm -f "$TMP_BIN" "$TMP_SUMS"' EXIT
 
 if [[ -n "$LOCAL_BIN" ]]; then
   cp -f "$LOCAL_BIN" "$TMP_BIN"
 else
+  BIN_NAME="fastly-finder-linux-${ARCH}"
   if [[ "$VERSION" == "latest" ]]; then
-    URL="https://github.com/${REPO}/releases/latest/download/fastly-finder-linux-${ARCH}"
+    BASE_URL="https://github.com/${REPO}/releases/latest/download"
   else
-    URL="https://github.com/${REPO}/releases/download/${VERSION}/fastly-finder-linux-${ARCH}"
+    BASE_URL="https://github.com/${REPO}/releases/download/${VERSION}"
   fi
+  URL="${BASE_URL}/${BIN_NAME}"
+  SUMS_URL="${BASE_URL}/SHA256SUMS"
   echo "[*] Downloading ${URL}..."
   curl -fL --retry 3 -o "$TMP_BIN" "$URL"
+  curl -fL --retry 3 -o "$TMP_SUMS" "$SUMS_URL"
+  EXPECTED_SUM="$(awk -v f="$BIN_NAME" '$2 == f || $2 == "*"f {print $1; exit}' "$TMP_SUMS")"
+  if [[ -z "$EXPECTED_SUM" ]]; then
+    echo "[!] Missing checksum for ${BIN_NAME} in ${SUMS_URL}" >&2
+    exit 1
+  fi
+  ACTUAL_SUM="$(sha256sum "$TMP_BIN" | awk '{print $1}')"
+  if [[ "$ACTUAL_SUM" != "$EXPECTED_SUM" ]]; then
+    echo "[!] Checksum mismatch for ${BIN_NAME}: expected ${EXPECTED_SUM}, got ${ACTUAL_SUM}" >&2
+    exit 1
+  fi
 fi
 install -m 0755 "$TMP_BIN" "$BIN_PATH"
 
@@ -111,6 +137,19 @@ if [[ -z "$AUTH_CRED" ]]; then
   GENERATED_PASS="$(head -c 18 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n')"
   AUTH_CRED="admin:${GENERATED_PASS}"
 fi
+if [[ "$AUTH_CRED" == *$'\n'* || "$AUTH_CRED" == *$'\r'* ]]; then
+  echo "[!] --auth cannot contain newlines" >&2
+  exit 2
+fi
+if [[ "$AUTH_CRED" != *:* ]]; then
+  AUTH_CRED="admin:${AUTH_CRED}"
+fi
+AUTH_USER="${AUTH_CRED%%:*}"
+AUTH_PASS="${AUTH_CRED#*:}"
+if [[ -z "$AUTH_USER" || -z "$AUTH_PASS" ]]; then
+  echo "[!] --auth must have non-empty user and password" >&2
+  exit 2
+fi
 
 # 4. Optional Let's Encrypt short-lived IP certificate via Certbot (>= 5.3 for --ip-address).
 ensure_certbot_ip_support() {
@@ -126,7 +165,11 @@ ensure_certbot_ip_support() {
     if dpkg -s certbot >/dev/null 2>&1; then
       apt-get remove -y -qq certbot >/dev/null 2>&1 || true
     fi
-    snap install --classic certbot >&2
+    if snap list certbot >/dev/null 2>&1; then
+      snap refresh certbot >&2
+    else
+      snap install --classic certbot >&2
+    fi
     ln -sf /snap/bin/certbot /usr/local/bin/certbot
     echo "/snap/bin/certbot"
     return 0
@@ -200,6 +243,10 @@ if [[ "$USE_CERTBOT" -eq 1 ]]; then
   cat > "$HOOK_FILE" <<HOOK
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ -n "\${RENEWED_LINEAGE:-}" && "\${RENEWED_LINEAGE}" != "${LIVE_DIR}" ]]; then
+  exit 0
+fi
+[[ -f "${LIVE_DIR}/fullchain.pem" && -f "${LIVE_DIR}/privkey.pem" ]] || exit 0
 install -m 0644 -o root -g ${SVC_USER} "${LIVE_DIR}/fullchain.pem" "${TLS_DIR}/cert.pem"
 install -m 0640 -o root -g ${SVC_USER} "${LIVE_DIR}/privkey.pem" "${TLS_DIR}/key.pem"
 HOOK
@@ -243,27 +290,28 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=${DATA_DIR}
-ReadOnlyPaths=${ENV_DIR}
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable --now fastly-finder.service
+systemctl enable fastly-finder.service
 systemctl restart fastly-finder.service
 
-AUTH_USER="${AUTH_CRED%%:*}"
-AUTH_PASS="${AUTH_CRED#*:}"
 HOST_HINT="$CERTBOT_IP"
 if [[ -z "$HOST_HINT" ]]; then
-  HOST_HINT="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  HOST_HINT="$( (hostname -I 2>/dev/null || true) | awk '{print $1}' )"
+fi
+HOST_DISPLAY="${HOST_HINT:-127.0.0.1}"
+if [[ "$HOST_DISPLAY" == *:* ]]; then
+  HOST_DISPLAY="[${HOST_DISPLAY}]"
 fi
 PORT_PART="${LISTEN_ADDR##*:}"
 
 echo ""
 echo "[+] fastly-finder service is active!"
-echo "    URL:      https://${HOST_HINT:-127.0.0.1}:${PORT_PART}"
+echo "    URL:      https://${HOST_DISPLAY}:${PORT_PART}"
 echo "    User:     ${AUTH_USER}"
 if [[ -n "$GENERATED_PASS" ]]; then
   echo "    Password: ${AUTH_PASS}"

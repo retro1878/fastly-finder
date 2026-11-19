@@ -14,6 +14,7 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -100,11 +101,14 @@ func readSystemResolvers() []string {
 
 // ResolveAll resolves all hosts concurrently and tags Fastly CNAMEs and Fastly IPs.
 func ResolveAll(ctx context.Context, hosts []string, ranges *RangeSet, opts DNSOptions, httpClient *http.Client, onProgress func(done, total int)) []DNSResult {
+	if len(hosts) == 0 {
+		return nil
+	}
 	workers := opts.Workers
 	if workers <= 0 {
 		workers = 100
 	}
-	if workers > len(hosts) && len(hosts) > 0 {
+	if workers > len(hosts) {
 		workers = len(hosts)
 	}
 	if opts.Timeout <= 0 {
@@ -154,6 +158,15 @@ func ResolveAll(ctx context.Context, hosts []string, ranges *RangeSet, opts DNSO
 	}()
 
 	wg.Wait()
+	if ctx.Err() != nil {
+		filtered := results[:0]
+		for _, r := range results {
+			if r.Host != "" {
+				filtered = append(filtered, r)
+			}
+		}
+		return filtered
+	}
 	return results
 }
 
@@ -173,7 +186,7 @@ func resolveOne(ctx context.Context, host string, ranges *RangeSet, opts DNSOpti
 		var ips []netip.Addr
 		var err error
 		if opts.UseDoH {
-			cnames, ips, err = queryDoH(ctx, httpClient, opts.DoHURL, host, qt, opts.Timeout)
+			cnames, ips, err = queryDoHWithRetries(ctx, httpClient, opts.DoHURL, host, qt, opts.Timeout, opts.Retries)
 		} else {
 			cnames, ips, err = queryWireWithRetries(ctx, host, qt, opts, rr)
 		}
@@ -184,7 +197,7 @@ func resolveOne(ctx context.Context, host string, ranges *RangeSet, opts DNSOpti
 			cnameSet[c] = struct{}{}
 		}
 		for _, ip := range ips {
-			ipSet[ip] = struct{}{}
+			ipSet[ip.Unmap()] = struct{}{}
 		}
 	}
 
@@ -195,7 +208,20 @@ func resolveOne(ctx context.Context, host string, ranges *RangeSet, opts DNSOpti
 			res.OnFastlyDNS = true
 		}
 	}
+	sort.Strings(res.CNAMEs)
+	sort.Strings(res.FastlyCNAMEs)
+
+	ipList := make([]netip.Addr, 0, len(ipSet))
 	for ip := range ipSet {
+		ipList = append(ipList, ip)
+	}
+	sort.Slice(ipList, func(i, j int) bool {
+		if ipList[i].Is4() != ipList[j].Is4() {
+			return ipList[i].Is4()
+		}
+		return ipList[i].Compare(ipList[j]) < 0
+	})
+	for _, ip := range ipList {
 		s := ip.String()
 		res.IPs = append(res.IPs, s)
 		if ranges != nil && ranges.Contains(ip) {
@@ -248,6 +274,14 @@ func queryDNSWire(ctx context.Context, resolver, host string, qtype uint16, time
 	return parseDNSResponse(resp, id)
 }
 
+func deadlineFor(ctx context.Context, timeout time.Duration) time.Time {
+	dl := time.Now().Add(timeout)
+	if cdl, ok := ctx.Deadline(); ok && cdl.Before(dl) {
+		return cdl
+	}
+	return dl
+}
+
 func exchangeUDP(ctx context.Context, resolver string, pkt []byte, timeout time.Duration) ([]byte, bool, error) {
 	d := net.Dialer{Timeout: timeout}
 	conn, err := d.DialContext(ctx, "udp", resolver)
@@ -255,7 +289,9 @@ func exchangeUDP(ctx context.Context, resolver string, pkt []byte, timeout time.
 		return nil, false, err
 	}
 	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(timeout))
+	stop := context.AfterFunc(ctx, func() { _ = conn.SetDeadline(time.Now()) })
+	defer stop()
+	_ = conn.SetDeadline(deadlineFor(ctx, timeout))
 	if _, err := conn.Write(pkt); err != nil {
 		return nil, false, err
 	}
@@ -279,20 +315,21 @@ func exchangeTCP(ctx context.Context, resolver string, pkt []byte, timeout time.
 		return nil, err
 	}
 	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(timeout))
+	stop := context.AfterFunc(ctx, func() { _ = conn.SetDeadline(time.Now()) })
+	defer stop()
+	_ = conn.SetDeadline(deadlineFor(ctx, timeout))
 
-	lenBuf := make([]byte, 2)
-	binary.BigEndian.PutUint16(lenBuf, uint16(len(pkt)))
-	if _, err := conn.Write(lenBuf); err != nil {
+	frame := make([]byte, 2+len(pkt))
+	binary.BigEndian.PutUint16(frame[0:2], uint16(len(pkt)))
+	copy(frame[2:], pkt)
+	if _, err := conn.Write(frame); err != nil {
 		return nil, err
 	}
-	if _, err := conn.Write(pkt); err != nil {
+	var lenBuf [2]byte
+	if _, err := io.ReadFull(conn, lenBuf[:]); err != nil {
 		return nil, err
 	}
-	if _, err := io.ReadFull(conn, lenBuf); err != nil {
-		return nil, err
-	}
-	msgLen := int(binary.BigEndian.Uint16(lenBuf))
+	msgLen := int(binary.BigEndian.Uint16(lenBuf[:]))
 	if msgLen < 12 || msgLen > 65535 {
 		return nil, errors.New("invalid TCP DNS length")
 	}
@@ -345,11 +382,7 @@ func parseDNSResponse(msg []byte, expectedID uint16) ([]string, []netip.Addr, er
 	}
 	flags := binary.BigEndian.Uint16(msg[2:4])
 	rcode := flags & 0x000F
-	if rcode != 0 {
-		// NXDOMAIN (3) or SERVFAIL (2) etc.; not a transport error for NXDOMAIN, but record no answers.
-		if rcode == 3 {
-			return nil, nil, nil
-		}
+	if rcode != 0 && rcode != 3 {
 		return nil, nil, fmt.Errorf("dns rcode %d", rcode)
 	}
 
@@ -453,6 +486,25 @@ func readDNSName(msg []byte, offset int) (string, int, error) {
 	return "", 0, errors.New("DNS pointer loop")
 }
 
+func queryDoHWithRetries(ctx context.Context, client *http.Client, dohURL, host string, qtype uint16, timeout time.Duration, retries int) ([]string, []netip.Addr, error) {
+	var lastErr error
+	attempts := retries + 1
+	if attempts < 1 {
+		attempts = 1
+	}
+	for i := 0; i < attempts; i++ {
+		if ctx.Err() != nil {
+			return nil, nil, ctx.Err()
+		}
+		cnames, ips, err := queryDoH(ctx, client, dohURL, host, qtype, timeout)
+		if err == nil {
+			return cnames, ips, nil
+		}
+		lastErr = err
+	}
+	return nil, nil, lastErr
+}
+
 func queryDoH(ctx context.Context, client *http.Client, dohURL, host string, qtype uint16, timeout time.Duration) ([]string, []netip.Addr, error) {
 	if dohURL == "" {
 		dohURL = "https://dns.google/resolve"
@@ -494,6 +546,9 @@ func queryDoH(ctx context.Context, client *http.Client, dohURL, host string, qty
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&doc); err != nil {
 		return nil, nil, err
+	}
+	if doc.Status != 0 && doc.Status != 3 {
+		return nil, nil, fmt.Errorf("DoH DNS status %d", doc.Status)
 	}
 	var cnames []string
 	var ips []netip.Addr

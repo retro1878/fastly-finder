@@ -22,7 +22,7 @@ type ctLogInfo struct {
 
 // collectDirectCTLogs samples recent entries from active public RFC 6962 CT logs
 // and extracts DNS names from Certainly-issued certificates and Fastly shared SAN certs.
-func collectDirectCTLogs(ctx context.Context, client *http.Client, entriesPerLog int, opts SourceOptions, store *candidateStore) int {
+func collectDirectCTLogs(ctx context.Context, client *http.Client, entriesPerLog int, opts SourceOptions, store *candidateStore) {
 	if entriesPerLog <= 0 {
 		entriesPerLog = 3000
 	}
@@ -35,10 +35,10 @@ func collectDirectCTLogs(ctx context.Context, client *http.Client, entriesPerLog
 		if opts.Logf != nil {
 			opts.Logf("[ct-logs] log list fetch failed: %v", err)
 		}
-		return 0
+		return
 	}
 	if len(logs) == 0 {
-		return 0
+		return
 	}
 
 	var totalAdded atomic.Int64
@@ -70,7 +70,6 @@ func collectDirectCTLogs(ctx context.Context, client *http.Client, entriesPerLog
 		opts.Logf("[ct-logs] scanned %d recent certs across %d CT logs (%d Fastly/Certainly certs, +%d hosts)",
 			scannedCerts.Load(), len(logs), matchedCerts.Load(), totalAdded.Load())
 	}
-	return int(totalAdded.Load())
 }
 
 func fetchUsableCTLogs(ctx context.Context, client *http.Client, maxLogs int) ([]ctLogInfo, error) {
@@ -82,16 +81,22 @@ func fetchUsableCTLogs(ctx context.Context, client *http.Client, maxLogs int) ([
 		Operators []struct {
 			Name string `json:"name"`
 			Logs []struct {
-				Description string         `json:"description"`
-				URL         string         `json:"url"`
-				State       map[string]any `json:"state"`
+				Description      string         `json:"description"`
+				URL              string         `json:"url"`
+				State            map[string]any `json:"state"`
+				TemporalInterval *struct {
+					StartInclusive time.Time `json:"start_inclusive"`
+					EndExclusive   time.Time `json:"end_exclusive"`
+				} `json:"temporal_interval"`
 			} `json:"logs"`
 		} `json:"operators"`
 	}
 	if err := json.Unmarshal(body, &doc); err != nil {
 		return nil, err
 	}
-	var out []ctLogInfo
+	now := time.Now().UTC()
+	nearFuture := now.Add(90 * 24 * time.Hour)
+	var activeNow, activeSoon, future []ctLogInfo
 	for _, op := range doc.Operators {
 		for _, l := range op.Logs {
 			if _, usable := l.State["usable"]; !usable {
@@ -101,11 +106,22 @@ func fetchUsableCTLogs(ctx context.Context, client *http.Client, maxLogs int) ([
 			if !strings.HasPrefix(u, "https://") {
 				continue
 			}
-			out = append(out, ctLogInfo{URL: u, Description: l.Description})
-			if maxLogs > 0 && len(out) >= maxLogs {
-				return out, nil
+			info := ctLogInfo{URL: u, Description: l.Description}
+			ti := l.TemporalInterval
+			switch {
+			case ti == nil || (!ti.StartInclusive.After(now) && (ti.EndExclusive.IsZero() || ti.EndExclusive.After(now))):
+				activeNow = append(activeNow, info)
+			case !ti.StartInclusive.After(nearFuture) && (ti.EndExclusive.IsZero() || ti.EndExclusive.After(now)):
+				activeSoon = append(activeSoon, info)
+			default:
+				future = append(future, info)
 			}
 		}
+	}
+	out := append(activeNow, activeSoon...)
+	out = append(out, future...)
+	if maxLogs > 0 && len(out) > maxLogs {
+		out = out[:maxLogs]
 	}
 	return out, nil
 }

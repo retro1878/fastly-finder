@@ -48,8 +48,11 @@ func queryCrtshPostgresOnce(ctx context.Context, sqlQuery string, timeout time.D
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(timeout))
+	rawConn := conn
+	defer func() { _ = conn.Close() }()
+	stop := context.AfterFunc(ctx, func() { _ = rawConn.SetDeadline(time.Now()) })
+	defer stop()
+	_ = rawConn.SetDeadline(time.Now().Add(timeout))
 
 	// Negotiate SSL if supported by crt.sh PostgreSQL.
 	var sslReq [8]byte
@@ -164,6 +167,7 @@ func pgWaitReady(r *bufio.Reader) error {
 }
 
 func pgReadQueryRows(r *bufio.Reader) ([][]string, error) {
+	const maxRows = 100000
 	var rows [][]string
 	var queryErr error
 	for {
@@ -173,6 +177,9 @@ func pgReadQueryRows(r *bufio.Reader) ([][]string, error) {
 		}
 		switch t {
 		case 'D':
+			if len(rows) >= maxRows {
+				return rows, fmt.Errorf("postgres response exceeded %d rows", maxRows)
+			}
 			row, err := pgParseDataRow(payload)
 			if err == nil {
 				rows = append(rows, row)
@@ -190,6 +197,9 @@ func pgParseDataRow(payload []byte) ([]string, error) {
 		return nil, errors.New("short DataRow")
 	}
 	cols := int(binary.BigEndian.Uint16(payload[0:2]))
+	if cols > (len(payload)-2)/4 {
+		return nil, errors.New("invalid DataRow column count")
+	}
 	off := 2
 	row := make([]string, cols)
 	for i := 0; i < cols; i++ {

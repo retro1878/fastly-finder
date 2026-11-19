@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"time"
 )
@@ -64,7 +65,20 @@ func RunScan(ctx context.Context, cfg ScanConfig, emit func(ScanEvent)) (*ScanOu
 		emit = func(ScanEvent) {}
 	}
 	start := time.Now()
-	httpClient := &http.Client{Timeout: 30 * time.Second}
+	tr := &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   15 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		MaxIdleConns:          256,
+		MaxIdleConnsPerHost:   128,
+		IdleConnTimeout:       60 * time.Second,
+		TLSHandshakeTimeout:   15 * time.Second,
+		ResponseHeaderTimeout: 30 * time.Second,
+	}
+	defer tr.CloseIdleConnections()
+	httpClient := &http.Client{Transport: tr}
 
 	logMsg := func(stage, format string, args ...any) {
 		emit(ScanEvent{Stage: stage, Message: fmt.Sprintf(format, args...)})
@@ -107,6 +121,9 @@ func RunScan(ctx context.Context, cfg ScanConfig, emit func(ScanEvent)) (*ScanOu
 	if err != nil {
 		return nil, fmt.Errorf("collecting candidates: %w", err)
 	}
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
 	outcome := &ScanOutcome{
 		Counts:          make(map[string]int),
 		RangeSource:     ranges.Source,
@@ -143,6 +160,9 @@ func RunScan(ctx context.Context, cfg ScanConfig, emit func(ScanEvent)) (*ScanOu
 			Total:   total,
 		})
 	})
+	if ctx.Err() != nil {
+		return outcome, ctx.Err()
+	}
 
 	for _, r := range dnsResults {
 		if r.OnFastlyDNS {
@@ -166,8 +186,14 @@ func RunScan(ctx context.Context, cfg ScanConfig, emit func(ScanEvent)) (*ScanOu
 			Total:   total,
 		})
 	})
+	if ctx.Err() != nil {
+		return outcome, ctx.Err()
+	}
 
 	for _, f := range findings {
+		if f.Host == "" {
+			continue
+		}
 		outcome.Counts[f.Status]++
 		if cfg.OnlyConfirmed && f.Status != "confirmed" {
 			continue
@@ -178,13 +204,18 @@ func RunScan(ctx context.Context, cfg ScanConfig, emit func(ScanEvent)) (*ScanOu
 		outcome.Findings = append(outcome.Findings, f)
 	}
 	outcome.Elapsed = time.Since(start)
-	logMsg("done", "done in %s | confirmed=%d headers_hidden=%d unknown_domain=%d unreachable=%d fastly_dns=%d",
+	offDNS := ""
+	if outcome.Counts["edge_configured_off_dns"] > 0 {
+		offDNS = fmt.Sprintf(" off_dns=%d", outcome.Counts["edge_configured_off_dns"])
+	}
+	logMsg("done", "done in %s | confirmed=%d headers_hidden=%d unknown_domain=%d unreachable=%d fastly_dns=%d%s",
 		outcome.Elapsed.Round(time.Millisecond),
 		outcome.Counts["confirmed"],
 		outcome.Counts["fastly_dns_headers_hidden"],
 		outcome.Counts["unknown_domain"],
 		outcome.Counts["dns_only_unreachable"],
 		outcome.Counts["fastly_dns"],
+		offDNS,
 	)
 	return outcome, nil
 }

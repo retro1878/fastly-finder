@@ -65,6 +65,7 @@ type webServer struct {
 	findings   []Finding
 	logs       []string
 	activeFile string
+	scanID     int64
 	cancelFn   context.CancelFunc
 }
 
@@ -80,7 +81,10 @@ func RunWebServer(ctx context.Context, opts WebOptions) error {
 		return fmt.Errorf("create web-dir %s: %w", opts.WebDir, err)
 	}
 
-	user, pass, generated := resolveWebCredentials(opts.Auth)
+	user, pass, generated, err := resolveWebCredentials(opts.Auth)
+	if err != nil {
+		return fmt.Errorf("web auth setup: %w", err)
+	}
 	hmacKey := make([]byte, 32)
 	if _, err := rand.Read(hmacKey); err != nil {
 		return err
@@ -154,20 +158,25 @@ func RunWebServer(ctx context.Context, opts WebOptions) error {
 	}
 }
 
-func resolveWebCredentials(flagAuth string) (user, pass string, generated bool) {
+func resolveWebCredentials(flagAuth string) (user, pass string, generated bool, err error) {
 	raw := strings.TrimSpace(flagAuth)
 	if raw == "" {
 		raw = strings.TrimSpace(os.Getenv("FASTLY_FINDER_WEB_AUTH"))
 	}
 	if raw != "" {
-		if u, p, ok := strings.Cut(raw, ":"); ok && u != "" && p != "" {
-			return u, p, false
+		if u, p, ok := strings.Cut(raw, ":"); ok {
+			if u == "" || p == "" {
+				return "", "", false, errors.New("web auth credentials must have non-empty user and password")
+			}
+			return u, p, false, nil
 		}
-		return "admin", raw, false
+		return "admin", raw, false, nil
 	}
 	buf := make([]byte, 18)
-	_, _ = rand.Read(buf)
-	return "admin", base64.RawURLEncoding.EncodeToString(buf), true
+	if _, err := rand.Read(buf); err != nil {
+		return "", "", false, err
+	}
+	return "admin", base64.RawURLEncoding.EncodeToString(buf), true, nil
 }
 
 func securityHeaders(next http.Handler) http.Handler {
@@ -217,14 +226,19 @@ func (ws *webServer) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request"})
 		return
 	}
-	userOK := subtle.ConstantTimeCompare([]byte(req.User), []byte(ws.authUser)) == 1
-	passOK := subtle.ConstantTimeCompare([]byte(req.Pass), []byte(ws.authPass)) == 1
-	if !userOK || !passOK {
-		ws.limiter.recordFailure(ip)
+	allowed, ok := ws.limiter.authenticate(ip, func() bool {
+		userOK := subtle.ConstantTimeCompare([]byte(req.User), []byte(ws.authUser)) == 1
+		passOK := subtle.ConstantTimeCompare([]byte(req.Pass), []byte(ws.authPass)) == 1
+		return userOK && passOK
+	})
+	if !allowed {
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many failed attempts; wait 60s"})
+		return
+	}
+	if !ok {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
 		return
 	}
-	ws.limiter.reset(ip)
 
 	exp := time.Now().Add(24 * time.Hour).Unix()
 	token := ws.signSession(exp)
@@ -241,6 +255,7 @@ func (ws *webServer) handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (ws *webServer) handleLogout(w http.ResponseWriter, r *http.Request) {
+	ws.rotateSessionKey()
 	http.SetCookie(w, &http.Cookie{
 		Name:     "ff_session",
 		Value:    "",
@@ -285,9 +300,21 @@ func (ws *webServer) isAuthenticated(r *http.Request) bool {
 	return ws.verifySession(c.Value)
 }
 
+func (ws *webServer) rotateSessionKey() {
+	next := make([]byte, 32)
+	if _, err := rand.Read(next); err != nil {
+		return
+	}
+	ws.mu.Lock()
+	ws.hmacKey = next
+	ws.mu.Unlock()
+}
+
 func (ws *webServer) signSession(exp int64) string {
 	payload := strconv.FormatInt(exp, 10)
+	ws.mu.Lock()
 	mac := hmac.New(sha256.New, ws.hmacKey)
+	ws.mu.Unlock()
 	mac.Write([]byte(payload))
 	return payload + "." + hex.EncodeToString(mac.Sum(nil))
 }
@@ -305,7 +332,9 @@ func (ws *webServer) verifySession(tok string) bool {
 	if err != nil {
 		return false
 	}
+	ws.mu.Lock()
 	mac := hmac.New(sha256.New, ws.hmacKey)
+	ws.mu.Unlock()
 	mac.Write([]byte(payload))
 	expected := mac.Sum(nil)
 	return hmac.Equal(sig, expected)
@@ -330,6 +359,7 @@ func (ws *webServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"counts":      countsCopy,
 		"logs":        logsCopy,
 		"active_file": ws.activeFile,
+		"scan_id":     ws.scanID,
 	})
 }
 
@@ -341,6 +371,10 @@ func (ws *webServer) handleScanStart(w http.ResponseWriter, r *http.Request) {
 	}
 	if !req.Global && len(req.Domains) == 0 && len(req.DirectHosts) == 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "specify target domain(s), host list, or enable global discovery"})
+		return
+	}
+	if req.Global && len(req.Seeds) == 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "select at least one global seed"})
 		return
 	}
 
@@ -384,10 +418,11 @@ func (ws *webServer) handleScanStart(w http.ResponseWriter, r *http.Request) {
 	ws.findings = nil
 	ws.logs = nil
 	ws.activeFile = ""
+	ws.scanID++
 	ws.cancelFn = cancel
 	ws.mu.Unlock()
 
-	go ws.runScanWorker(scanCtx, cfg)
+	go ws.runScanWorker(scanCtx, cancel, cfg)
 	writeJSON(w, http.StatusAccepted, map[string]any{"started": true})
 }
 
@@ -404,8 +439,9 @@ func (ws *webServer) cancelActive() {
 	}
 }
 
-func (ws *webServer) runScanWorker(ctx context.Context, cfg ScanConfig) {
+func (ws *webServer) runScanWorker(ctx context.Context, cancel context.CancelFunc, cfg ScanConfig) {
 	defer func() {
+		cancel()
 		ws.mu.Lock()
 		ws.running = false
 		ws.cancelFn = nil
@@ -417,7 +453,7 @@ func (ws *webServer) runScanWorker(ctx context.Context, cfg ScanConfig) {
 		defer ws.mu.Unlock()
 		if ev.Message != "" {
 			ws.message = ev.Message
-			if ev.Stage != "dns" && ev.Stage != "probe" {
+			if !(ev.Total > 0 && (ev.Stage == "dns" || ev.Stage == "probe")) {
 				ws.appendLogLocked(ev.Message)
 			}
 		}
@@ -427,9 +463,8 @@ func (ws *webServer) runScanWorker(ctx context.Context, cfg ScanConfig) {
 		}
 	})
 
-	ws.mu.Lock()
-	defer ws.mu.Unlock()
 	if err != nil {
+		ws.mu.Lock()
 		if ctx.Err() != nil {
 			ws.state = "cancelled"
 			ws.message = "scan cancelled"
@@ -438,23 +473,29 @@ func (ws *webServer) runScanWorker(ctx context.Context, cfg ScanConfig) {
 			ws.message = err.Error()
 		}
 		ws.appendLogLocked(ws.message)
+		ws.mu.Unlock()
 		return
 	}
 
+	var savedName string
+	var saveErr error
+	if len(outcome.Findings) > 0 {
+		savedName, saveErr = saveScanJSONL(ws.opts.WebDir, cfg, outcome.Findings)
+	}
+
+	ws.mu.Lock()
+	defer ws.mu.Unlock()
 	ws.findings = outcome.Findings
 	ws.counts = outcome.Counts
 	ws.candidates = outcome.CandidatesCount
 	ws.fastlyDNS = outcome.FastlyDNSCount
 	ws.state = "completed"
-	if ctx.Err() != nil {
-		ws.state = "cancelled"
-	}
-
-	if len(outcome.Findings) > 0 {
-		if name, serr := saveScanJSONL(ws.opts.WebDir, cfg, outcome.Findings); serr == nil {
-			ws.activeFile = name
-			ws.appendLogLocked("saved " + name)
-		}
+	if savedName != "" {
+		ws.activeFile = savedName
+		ws.appendLogLocked("saved " + savedName)
+	} else if saveErr != nil {
+		ws.appendLogLocked("save error: " + saveErr.Error())
+		fmt.Fprintf(os.Stderr, "[!] save scan error: %v\n", saveErr)
 	}
 }
 
@@ -578,19 +619,49 @@ func saveScanJSONL(dir string, cfg ScanConfig, findings []Finding) (string, erro
 		tag = "global"
 	} else if len(cfg.Domains) > 0 {
 		if clean := sanitizeTSQueryDomain(cfg.Domains[0]); clean != "" {
-			tag = clean
+			for strings.Contains(clean, "..") {
+				clean = strings.ReplaceAll(clean, "..", ".")
+			}
+			clean = strings.Trim(clean, ".-")
+			if len(clean) > 64 {
+				clean = strings.Trim(clean[:64], ".-")
+			}
+			if clean != "" {
+				tag = clean
+			}
 		}
 	}
 	name := fmt.Sprintf("scan_%s_%s.jsonl", time.Now().UTC().Format("20060102_150405"), tag)
 	path := filepath.Join(dir, name)
-	f, err := os.Create(path)
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return "", err
+	}
+	tmp, err := os.CreateTemp(dir, ".tmp-scan-*")
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
-	if err := writeFindings(f, "jsonl", findings); err != nil {
+	tmpName := tmp.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tmpName)
+		}
+	}()
+	if err := writeFindings(tmp, "jsonl", findings); err != nil {
+		_ = tmp.Close()
 		return "", err
 	}
+	if err := tmp.Chmod(0o640); err != nil {
+		_ = tmp.Close()
+		return "", err
+	}
+	if err := tmp.Close(); err != nil {
+		return "", err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return "", err
+	}
+	cleanup = false
 	return name, nil
 }
 
@@ -602,6 +673,9 @@ func buildWebTLSConfig(certFile, keyFile, cacheDir string) (*tls.Config, string,
 	}
 	if keyFile == "" {
 		keyFile = strings.TrimSpace(os.Getenv("FASTLY_FINDER_WEB_KEY"))
+	}
+	if (certFile == "") != (keyFile == "") {
+		return nil, "", errors.New("both --web-cert and --web-key must be set together")
 	}
 	if certFile != "" && keyFile != "" {
 		reloader, err := newCertReloader(certFile, keyFile)
@@ -674,7 +748,7 @@ func (cr *certReloader) getCertificate(*tls.ClientHelloInfo) (*tls.Certificate, 
 		cr.lastCheck = time.Now()
 		cInfo, cErr := os.Stat(cr.certFile)
 		kInfo, kErr := os.Stat(cr.keyFile)
-		if cErr == nil && kErr == nil && (cInfo.ModTime().After(cr.certMtime) || kInfo.ModTime().After(cr.keyMtime)) {
+		if cErr == nil && kErr == nil && (!cInfo.ModTime().Equal(cr.certMtime) || !kInfo.ModTime().Equal(cr.keyMtime)) {
 			if err := cr.reloadLocked(); err != nil {
 				fmt.Fprintf(os.Stderr, "[!] TLS cert reload error (keeping previous cert): %v\n", err)
 			} else {
@@ -698,7 +772,10 @@ func loadOrCreateSelfSigned(certPath, keyPath string) (tls.Certificate, error) {
 	if err != nil {
 		return tls.Certificate{}, err
 	}
-	serial, _ := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		return tls.Certificate{}, err
+	}
 	ips := []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")}
 	if addrs, err := net.InterfaceAddrs(); err == nil {
 		for _, a := range addrs {
@@ -712,7 +789,7 @@ func loadOrCreateSelfSigned(certPath, keyPath string) (tls.Certificate, error) {
 		Subject:               pkix.Name{CommonName: "fastly-finder"},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().Add(365 * 24 * time.Hour),
-		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		KeyUsage:              x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
 		DNSNames:              []string{"localhost"},
@@ -739,54 +816,118 @@ func loadOrCreateSelfSigned(certPath, keyPath string) (tls.Certificate, error) {
 	return tls.X509KeyPair(certPEM, keyPEM)
 }
 
+const (
+	loginMaxFailures   = 5
+	loginLockDuration  = 60 * time.Second
+	loginFailWindow    = 15 * time.Minute
+	loginMaxTrackedIPs = 10000
+)
+
 type loginAttempt struct {
-	fails int
-	until time.Time
+	fails    int
+	lastFail time.Time
+	until    time.Time
 }
 
 type loginLimiter struct {
-	mu       sync.Mutex
-	attempts map[string]*loginAttempt
+	mu        sync.Mutex
+	attempts  map[string]*loginAttempt
+	lastPrune time.Time
 }
 
 func newLoginLimiter() *loginLimiter {
-	return &loginLimiter{attempts: make(map[string]*loginAttempt)}
+	return &loginLimiter{
+		attempts:  make(map[string]*loginAttempt),
+		lastPrune: time.Now(),
+	}
 }
 
 func (l *loginLimiter) allow(ip string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	a, ok := l.attempts[ip]
-	if !ok {
-		return true
-	}
-	if time.Now().After(a.until) {
-		if a.fails >= 5 {
-			delete(l.attempts, ip)
-		}
-		return true
-	}
-	return a.fails < 5
+	return l.allowLocked(ip, time.Now())
 }
 
 func (l *loginLimiter) recordFailure(ip string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	a, ok := l.attempts[ip]
-	if !ok {
-		a = &loginAttempt{}
-		l.attempts[ip] = a
-	}
-	a.fails++
-	if a.fails >= 5 {
-		a.until = time.Now().Add(60 * time.Second)
-	}
+	l.recordFailureLocked(ip, time.Now())
 }
 
 func (l *loginLimiter) reset(ip string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	delete(l.attempts, ip)
+}
+
+func (l *loginLimiter) authenticate(ip string, check func() bool) (allowed, ok bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := time.Now()
+	if !l.allowLocked(ip, now) {
+		return false, false
+	}
+	if check() {
+		delete(l.attempts, ip)
+		return true, true
+	}
+	l.recordFailureLocked(ip, now)
+	return true, false
+}
+
+func (l *loginLimiter) allowLocked(ip string, now time.Time) bool {
+	l.pruneLocked(now)
+	a, ok := l.attempts[ip]
+	if !ok {
+		return true
+	}
+	if a.fails >= loginMaxFailures {
+		if now.After(a.until) {
+			delete(l.attempts, ip)
+			return true
+		}
+		return false
+	}
+	if !a.lastFail.IsZero() && now.Sub(a.lastFail) > loginFailWindow {
+		delete(l.attempts, ip)
+		return true
+	}
+	return true
+}
+
+func (l *loginLimiter) recordFailureLocked(ip string, now time.Time) {
+	l.pruneLocked(now)
+	a, ok := l.attempts[ip]
+	if !ok {
+		if len(l.attempts) >= loginMaxTrackedIPs {
+			for k := range l.attempts {
+				delete(l.attempts, k)
+				break
+			}
+		}
+		a = &loginAttempt{}
+		l.attempts[ip] = a
+	} else if a.fails < loginMaxFailures && !a.lastFail.IsZero() && now.Sub(a.lastFail) > loginFailWindow {
+		a.fails = 0
+	}
+	a.fails++
+	a.lastFail = now
+	if a.fails >= loginMaxFailures {
+		a.until = now.Add(loginLockDuration)
+	}
+}
+
+func (l *loginLimiter) pruneLocked(now time.Time) {
+	if now.Sub(l.lastPrune) < 5*time.Minute && len(l.attempts) < loginMaxTrackedIPs {
+		return
+	}
+	l.lastPrune = now
+	for k, a := range l.attempts {
+		if (a.fails >= loginMaxFailures && now.After(a.until)) ||
+			(a.fails < loginMaxFailures && !a.lastFail.IsZero() && now.Sub(a.lastFail) > loginFailWindow) {
+			delete(l.attempts, k)
+		}
+	}
 }
 
 func clientIP(remoteAddr string) string {

@@ -12,17 +12,20 @@ import (
 	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/binary"
+	"errors"
+	"io"
 	"math/big"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestRangeSetAndCNAME(t *testing.T) {
@@ -173,37 +176,43 @@ func TestProbeAndClassification(t *testing.T) {
 	}))
 	defer srvConfirmed.Close()
 
-	u, err := url.Parse(srvConfirmed.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	host, port, _ := net.SplitHostPort(u.Host)
-	if host == "" || port == "" {
-		t.Fatal("bad test server host/port")
-	}
-
-	// Test directFastlyHTTPProbe directly against httptest TLS server.
+	// Test doFastlyHTTPProbe directly against httptest TLS server.
 	out := doFastlyHTTPProbe(context.Background(), srvConfirmed.Client(), srvConfirmed.URL, "example.com")
 	if !out.hasFastlyHdr || out.unknownDomain {
 		t.Fatalf("expected Fastly headers and no unknownDomain, got %+v", out)
 	}
 
-	// Test unknown domain detection.
+	// Test unknown domain detection (even when Fastly attaches X-Served-By).
 	srvUnknown := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Served-By", "cache-fra-eddf8230171-FRA")
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("<html><title>Fastly error: unknown domain: foo.example.com</title></html>"))
 	}))
 	defer srvUnknown.Close()
 
 	outUnk := doFastlyHTTPProbe(context.Background(), srvUnknown.Client(), srvUnknown.URL, "foo.example.com")
-	if !outUnk.unknownDomain {
-		t.Fatal("expected unknownDomain=true")
+	if !outUnk.unknownDomain || outUnk.hasFastlyHdr {
+		t.Fatalf("expected unknownDomain=true and hasFastlyHdr=false, got %+v", outUnk)
 	}
 	if cls := classifyFinding(true, httpProbeOutcome{}, outUnk); cls != "unknown_domain" {
 		t.Fatalf("expected unknown_domain, got %q", cls)
 	}
 	if cls := classifyFinding(false, httpProbeOutcome{statusCode: 200}, outUnk); cls != "not_fastly" {
 		t.Fatalf("expected not_fastly when DNS is off-Fastly, got %q", cls)
+	}
+	// HTTPS 421 Misdirected Request with X-Served-By and !certMatch must not confirm Fastly.
+	srv421 := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Served-By", "cache-fra-eddf8230135")
+		w.WriteHeader(http.StatusMisdirectedRequest)
+		_, _ = w.Write([]byte("Requested host does not match any Subject Alternative Names"))
+	}))
+	defer srv421.Close()
+	out421 := doFastlyHTTPProbe(context.Background(), srv421.Client(), srv421.URL, "not-fastly.invalid")
+	if out421.hasFastlyHdr || out421.certMatch {
+		t.Fatalf("expected 421 without certMatch to clear hasFastlyHdr, got %+v", out421)
+	}
+	if cls := classifyFinding(false, httpProbeOutcome{statusCode: 200}, out421); cls != "not_fastly" {
+		t.Fatalf("expected not_fastly for off-DNS 421, got %q", cls)
 	}
 	if cls := classifyFinding(true, httpProbeOutcome{statusCode: 200}, httpProbeOutcome{statusCode: 200}); cls != "fastly_dns_headers_hidden" {
 		t.Fatalf("expected fastly_dns_headers_hidden, got %q", cls)
@@ -230,7 +239,6 @@ func TestPGHelpers(t *testing.T) {
 	if len(row) != 2 || row[0] != "a.example.com" || row[1] != "" {
 		t.Fatalf("unexpected DataRow parse: %+v", row)
 	}
-	_ = time.Second
 }
 
 func TestParseCTEntryCert(t *testing.T) {
@@ -347,23 +355,28 @@ func TestWriteFindingsTableAndAutoFormat(t *testing.T) {
 
 func TestWebAuthTLSAndSandbox(t *testing.T) {
 	// 1. Credentials resolution
-	u, p, gen := resolveWebCredentials("ops:s3cr3t")
-	if u != "ops" || p != "s3cr3t" || gen {
-		t.Fatalf("unexpected explicit creds: %q %q %v", u, p, gen)
+	u, p, gen, err := resolveWebCredentials("ops:s3cr3t")
+	if err != nil || u != "ops" || p != "s3cr3t" || gen {
+		t.Fatalf("unexpected explicit creds: %q %q %v err=%v", u, p, gen, err)
 	}
-	u, p, gen = resolveWebCredentials("onlypass")
-	if u != "admin" || p != "onlypass" || gen {
-		t.Fatalf("unexpected pass-only creds: %q %q %v", u, p, gen)
+	u, p, gen, err = resolveWebCredentials("onlypass")
+	if err != nil || u != "admin" || p != "onlypass" || gen {
+		t.Fatalf("unexpected pass-only creds: %q %q %v err=%v", u, p, gen, err)
+	}
+	for _, badCred := range []string{"admin:", ":pass"} {
+		if _, _, _, cerr := resolveWebCredentials(badCred); cerr == nil {
+			t.Fatalf("expected error for malformed auth %q", badCred)
+		}
 	}
 	t.Setenv("FASTLY_FINDER_WEB_AUTH", "envu:envp")
-	u, p, gen = resolveWebCredentials("")
-	if u != "envu" || p != "envp" || gen {
-		t.Fatalf("expected env creds, got %q %q %v", u, p, gen)
+	u, p, gen, err = resolveWebCredentials("")
+	if err != nil || u != "envu" || p != "envp" || gen {
+		t.Fatalf("expected env creds, got %q %q %v err=%v", u, p, gen, err)
 	}
 	t.Setenv("FASTLY_FINDER_WEB_AUTH", "")
-	u, p, gen = resolveWebCredentials("")
-	if u != "admin" || p == "" || !gen {
-		t.Fatalf("expected generated creds, got %q %q %v", u, p, gen)
+	u, p, gen, err = resolveWebCredentials("")
+	if err != nil || u != "admin" || p == "" || !gen {
+		t.Fatalf("expected generated creds, got %q %q %v err=%v", u, p, gen, err)
 	}
 
 	// 2. Scan filename sandbox
@@ -494,5 +507,175 @@ func TestWebAuthTLSAndSandbox(t *testing.T) {
 	body := idxRec.Body.String()
 	if idxRec.Code != http.StatusOK || !strings.Contains(body, `lang="fa" dir="rtl"`) || !strings.Contains(body, "hoverTip") || !strings.Contains(body, "tip_with_www") {
 		t.Fatalf("embedded UI missing expected bilingual/tooltip markup (status=%d)", idxRec.Code)
+	}
+
+	// Logout rotates key and invalidates prior session cookie
+	logoutReq := httptest.NewRequest(http.MethodPost, "/api/logout", nil)
+	logoutReq.AddCookie(sessCookie)
+	logoutReq.Header.Set("X-Requested-With", "fastly-finder")
+	logoutRec := httptest.NewRecorder()
+	ws.requireAuth(ws.requireCSRF(ws.handleLogout))(logoutRec, logoutReq)
+	if logoutRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 on logout, got %d", logoutRec.Code)
+	}
+	if ws.verifySession(sessCookie.Value) {
+		t.Fatal("expected old session cookie to be invalidated after logout")
+	}
+
+	// Partial TLS cert/key flags must fail instead of silently falling back
+	if _, _, err := buildWebTLSConfig(certPath, "", dir); err == nil {
+		t.Fatal("expected error when only certFile is provided")
+	}
+
+	// Global scan without seeds must return 400
+	emptySeedReq := httptest.NewRequest(http.MethodPost, "/api/scan/start", strings.NewReader(`{"global":true,"seeds":[]}`))
+	emptySeedRec := httptest.NewRecorder()
+	ws.handleScanStart(emptySeedRec, emptySeedReq)
+	if emptySeedRec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for global scan with empty seeds, got %d", emptySeedRec.Code)
+	}
+
+	// saveScanJSONL sanitizes ".." in domain tag so sanitizeScanFilename accepts it
+	savedName, err := saveScanJSONL(dir, ScanConfig{Domains: []string{"a..b.example.com"}}, ws.findings)
+	if err != nil {
+		t.Fatalf("saveScanJSONL failed: %v", err)
+	}
+	if _, err := sanitizeScanFilename(dir, savedName); err != nil {
+		t.Fatalf("saved filename %q rejected by sanitizeScanFilename: %v", savedName, err)
+	}
+}
+
+type failWriter struct{}
+
+func (failWriter) Write([]byte) (int, error) { return 0, errors.New("disk full") }
+
+func TestRegressionGuardsAndEdgeCases(t *testing.T) {
+	// 1. SSRF public-unicast IP check
+	for _, bad := range []string{"127.0.0.1", "169.254.169.254", "10.0.0.1", "192.168.1.1", "::1", "fc00::1", "bad"} {
+		if isPublicUnicastIP(bad) {
+			t.Fatalf("expected %q to be rejected by isPublicUnicastIP", bad)
+		}
+	}
+	if !isPublicUnicastIP("151.101.1.140") {
+		t.Fatal("expected 151.101.1.140 to pass isPublicUnicastIP")
+	}
+
+	// 2. Wire DNS NXDOMAIN (RCODE=3) keeps dangling CNAME
+	id, q, err := buildDNSQuery("dangling.example.com", dnsTypeA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var nxResp []byte
+	nxResp = append(nxResp, q[:2]...)
+	nxResp = append(nxResp, 0x81, 0x83) // QR=1, RD=1, RA=1, RCODE=3 (NXDOMAIN)
+	nxResp = append(nxResp, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00)
+	nxResp = append(nxResp, q[12:]...)
+	cnameWire := encodeWireLabels("dead.sni.global.fastly.net")
+	nxResp = append(nxResp, 0xC0, 0x0C)
+	nxResp = binary.BigEndian.AppendUint16(nxResp, dnsTypeCNAME)
+	nxResp = binary.BigEndian.AppendUint16(nxResp, dnsClassIN)
+	nxResp = binary.BigEndian.AppendUint32(nxResp, 60)
+	nxResp = binary.BigEndian.AppendUint16(nxResp, uint16(len(cnameWire)))
+	nxResp = append(nxResp, cnameWire...)
+	cnames, ips, err := parseDNSResponse(nxResp, id)
+	if err != nil || len(cnames) != 1 || cnames[0] != "dead.sni.global.fastly.net" || len(ips) != 0 {
+		t.Fatalf("unexpected NXDOMAIN CNAME parse: cnames=%v ips=%v err=%v", cnames, ips, err)
+	}
+
+	// 3. DoH checks Status != 0 && != 3, and resolveOne sorts IPv4 before IPv6
+	dohSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Query().Get("name") {
+		case "servfail.example.com":
+			_, _ = io.WriteString(w, `{"Status":2}`)
+		default:
+			_, _ = io.WriteString(w, `{"Status":0,"Answer":[{"type":28,"data":"2a04:4e42::140"},{"type":1,"data":"151.101.1.140"}]}`)
+		}
+	}))
+	defer dohSrv.Close()
+	if _, _, derr := queryDoH(context.Background(), dohSrv.Client(), dohSrv.URL, "servfail.example.com", dnsTypeA, time.Second); derr == nil {
+		t.Fatal("expected error for DoH Status=2")
+	}
+	rs := &RangeSet{}
+	rs.addStrings(embeddedFastlyCIDRs)
+	var rr atomic.Uint64
+	dr := resolveOne(context.Background(), "dual.example.com", rs, DNSOptions{UseDoH: true, DoHURL: dohSrv.URL, QueryAAAA: true, Timeout: time.Second}, dohSrv.Client(), &rr)
+	if len(dr.FastlyIPs) != 2 || dr.FastlyIPs[0] != "151.101.1.140" {
+		t.Fatalf("expected IPv4 sorted before IPv6, got %+v", dr.FastlyIPs)
+	}
+
+	// 4. Cancelled ResolveAll / VerifyHosts emit no empty host records
+	cCtx, cCancel := context.WithCancel(context.Background())
+	cCancel()
+	if got := ResolveAll(cCtx, []string{"a.example.com", "b.example.com"}, rs, DNSOptions{Workers: 2}, dohSrv.Client(), nil); len(got) != 0 {
+		t.Fatalf("expected 0 records on pre-cancelled ResolveAll, got %+v", got)
+	}
+	if got := VerifyHosts(cCtx, []Candidate{{Host: "a.example.com"}}, []DNSResult{{Host: "a.example.com", OnFastlyDNS: true}}, ProbeOptions{Workers: 1}, nil); len(got) != 0 {
+		t.Fatalf("expected 0 records on pre-cancelled VerifyHosts, got %+v", got)
+	}
+
+	// 5. Host normalization, Chaos URL validation, httpGetBytes limit, atomic write
+	for _, bad := range []string{"a..b.com", "-bad.com", "bad-.com", "151.101.1.140", strings.Repeat("a", 64) + ".com"} {
+		if got := NormalizeHost(bad); got != "" {
+			t.Fatalf("NormalizeHost(%q) = %q, want empty", bad, got)
+		}
+	}
+	if isAllowedChaosURL("http://chaos-data.projectdiscovery.io/a.zip") || isAllowedChaosURL("https://127.0.0.1/a.zip") {
+		t.Fatal("expected disallowed Chaos URL to be rejected")
+	}
+	if !isAllowedChaosURL("https://chaos-data.projectdiscovery.io/a.zip") {
+		t.Fatal("expected official Chaos HTTPS URL to be allowed")
+	}
+	bigSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "0123456789abcdef")
+	}))
+	defer bigSrv.Close()
+	if _, err := httpGetBytes(context.Background(), bigSrv.Client(), bigSrv.URL, 8); err == nil {
+		t.Fatal("expected httpGetBytes to fail when response exceeds maxBytes")
+	}
+	atomicPath := filepath.Join(t.TempDir(), "sub", "cache.json")
+	if err := writeFileAtomic(atomicPath, []byte(`{"ok":true}`), 0o644); err != nil {
+		t.Fatalf("writeFileAtomic failed: %v", err)
+	}
+
+	// 6. writeFindings error propagation, CSV escaping, UTF-8 truncateStr
+	sample := []Finding{{
+		Host:          "www.example.com",
+		Status:        "confirmed",
+		FastlyHeaders: map[string]string{"X-Served-By": "=cmd|' /C calc'!A0"},
+		TLSIssuer:     "ایران‌سرت-آزمایش-طولانی-برای-تست-یوتی‌اف۸",
+	}}
+	for _, fmtName := range []string{"table", "jsonl", "txt", "csv"} {
+		if err := writeFindings(failWriter{}, fmtName, sample); err == nil {
+			t.Fatalf("expected writeFindings(%s) to propagate write error", fmtName)
+		}
+	}
+	var csvBuf bytes.Buffer
+	if err := writeFindings(&csvBuf, "csv", sample); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(csvBuf.String(), "'=cmd") {
+		t.Fatalf("expected CSV formula prefix escaping, got:\n%s", csvBuf.String())
+	}
+	if tr := truncateStr(sample[0].TLSIssuer, 15); !utf8.ValidString(tr) {
+		t.Fatalf("truncateStr produced invalid UTF-8: %q", tr)
+	}
+
+	// 7. Concurrent loginLimiter blocks brute-force bursts at 5 attempts
+	concLim := newLoginLimiter()
+	var wg sync.WaitGroup
+	var allowedCount atomic.Int32
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			allowed, _ := concLim.authenticate("9.9.9.9", func() bool { return false })
+			if allowed {
+				allowedCount.Add(1)
+			}
+		}()
+	}
+	wg.Wait()
+	if allowedCount.Load() != loginMaxFailures {
+		t.Fatalf("expected exactly %d allowed failed attempts concurrently, got %d", loginMaxFailures, allowedCount.Load())
 	}
 }

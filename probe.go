@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -75,9 +76,15 @@ func VerifyHosts(ctx context.Context, candidates []Candidate, dnsResults []DNSRe
 
 	var targets []DNSResult
 	for _, dr := range dnsResults {
+		if dr.Host == "" {
+			continue
+		}
 		if dr.OnFastlyDNS || opts.ProbeAll {
 			targets = append(targets, dr)
 		}
+	}
+	if len(targets) == 0 {
+		return nil
 	}
 
 	findings := make([]Finding, len(targets))
@@ -146,7 +153,25 @@ func VerifyHosts(ctx context.Context, candidates []Candidate, dnsResults []DNSRe
 	}()
 
 	wg.Wait()
+	if ctx.Err() != nil {
+		filtered := findings[:0]
+		for _, f := range findings {
+			if f.Host != "" {
+				filtered = append(filtered, f)
+			}
+		}
+		return filtered
+	}
 	return findings
+}
+
+func isPublicUnicastIP(s string) bool {
+	ip, err := netip.ParseAddr(strings.TrimSpace(s))
+	if err != nil {
+		return false
+	}
+	ip = ip.Unmap()
+	return ip.IsValid() && ip.IsGlobalUnicast() && !ip.IsPrivate()
 }
 
 func verifyOne(ctx context.Context, dr DNSResult, sources []string, edgeFallback string, timeout time.Duration) Finding {
@@ -159,32 +184,75 @@ func verifyOne(ctx context.Context, dr DNSResult, sources []string, edgeFallback
 		FastlyIPs:    dr.FastlyIPs,
 	}
 
-	// 1. Live HTTP/HTTPS probe against the resolved host with Fastly-Debug: 1.
-	live := probeLiveHost(ctx, dr.Host, timeout)
+	// Fastly-DNS hosts with resolved Fastly IP(s) can be probed once directly against
+	// their verified Fastly IP (honoring --doh/--resolvers and preventing SSRF).
+	if dr.OnFastlyDNS && len(dr.FastlyIPs) > 0 {
+		edgeIP := dr.FastlyIPs[0]
+		edge := probeAtIP(ctx, dr.Host, edgeIP, timeout)
+		if edge.statusCode == 0 && edgeIP != edgeFallback {
+			if addr, err := netip.ParseAddr(edgeIP); err == nil && addr.Unmap().Is6() {
+				if fb := probeAtIP(ctx, dr.Host, edgeFallback, timeout); fb.statusCode > 0 {
+					edge = fb
+					edgeIP = edgeFallback
+				}
+			}
+		}
+		f.HTTPStatus = edge.statusCode
+		f.HTTPScheme = edge.scheme
+		f.FastlyHeaders = edge.headers
+		f.TLSIssuer = edge.tlsIssuer
+		f.TLSSubject = edge.tlsSubject
+		f.EdgeIPTested = edgeIP
+		f.EdgeHTTPStatus = edge.statusCode
+		f.EdgeSNICertMatch = edge.certMatch
+		f.EdgeTLSIssuer = edge.tlsIssuer
+		f.EdgeUnknownDom = edge.unknownDomain
+		f.ProbeError = edge.errStr
+		f.Status = classifyFinding(true, edge, edge)
+		return f
+	}
+
+	// CNAME-only Fastly DNS or --probe-all: probe the resolved public IP (if any) and the fallback edge IP.
+	var live httpProbeOutcome
+	liveIP := ""
+	for _, ip := range dr.IPs {
+		if isPublicUnicastIP(ip) {
+			liveIP = ip
+			break
+		}
+	}
+	if liveIP != "" {
+		live = probeAtIP(ctx, dr.Host, liveIP, timeout)
+	}
+
+	edge := probeAtIP(ctx, dr.Host, edgeFallback, timeout)
+
 	f.HTTPStatus = live.statusCode
 	f.HTTPScheme = live.scheme
 	f.FastlyHeaders = live.headers
 	f.TLSIssuer = live.tlsIssuer
 	f.TLSSubject = live.tlsSubject
-
-	// 2. Direct-IP Edge SNI + Host probe against Fastly edge IP.
-	edgeIP := edgeFallback
-	if len(dr.FastlyIPs) > 0 {
-		edgeIP = dr.FastlyIPs[0]
+	if f.HTTPStatus == 0 && edge.statusCode > 0 {
+		f.HTTPStatus = edge.statusCode
+		f.HTTPScheme = edge.scheme
+		f.TLSIssuer = edge.tlsIssuer
+		f.TLSSubject = edge.tlsSubject
 	}
-	f.EdgeIPTested = edgeIP
-	edge := probeDirectEdge(ctx, dr.Host, edgeIP, timeout)
+	if len(f.FastlyHeaders) == 0 && len(edge.headers) > 0 {
+		f.FastlyHeaders = edge.headers
+	}
+
+	f.EdgeIPTested = edgeFallback
 	f.EdgeHTTPStatus = edge.statusCode
 	f.EdgeSNICertMatch = edge.certMatch
 	f.EdgeTLSIssuer = edge.tlsIssuer
 	f.EdgeUnknownDom = live.unknownDomain || edge.unknownDomain
-
-	// Merge edge Fastly headers if live probe didn't see them.
-	if len(f.FastlyHeaders) == 0 && len(edge.headers) > 0 {
-		f.FastlyHeaders = edge.headers
-	}
-	if live.errStr != "" && edge.errStr != "" {
-		f.ProbeError = live.errStr
+	if (liveIP == "" || live.errStr != "") && edge.errStr != "" {
+		if live.errStr != "" {
+			f.ProbeError = live.errStr
+		} else {
+			f.ProbeError = edge.errStr
+		}
 	}
 
 	f.Status = classifyFinding(dr.OnFastlyDNS, live, edge)
@@ -192,10 +260,11 @@ func verifyOne(ctx context.Context, dr DNSResult, sources []string, edgeFallback
 }
 
 func classifyFinding(onFastlyDNS bool, live, edge httpProbeOutcome) string {
-	if live.unknownDomain || (onFastlyDNS && edge.unknownDomain) {
+	if live.unknownDomain || (onFastlyDNS && !live.hasFastlyHdr && edge.unknownDomain) {
 		return "unknown_domain"
 	}
-	if live.hasFastlyHdr || edge.hasFastlyHdr || (edge.certMatch && edge.statusCode > 0) {
+	edgePositive := !edge.unknownDomain && (edge.hasFastlyHdr || (edge.certMatch && edge.statusCode > 0 && edge.statusCode != http.StatusMisdirectedRequest))
+	if live.hasFastlyHdr || edgePositive {
 		if onFastlyDNS || live.hasFastlyHdr {
 			return "confirmed"
 		}
@@ -211,8 +280,16 @@ func classifyFinding(onFastlyDNS bool, live, edge httpProbeOutcome) string {
 	return "not_fastly"
 }
 
-func probeLiveHost(ctx context.Context, host string, timeout time.Duration) httpProbeOutcome {
+func probeAtIP(ctx context.Context, host, ip string, timeout time.Duration) httpProbeOutcome {
+	dialer := &net.Dialer{Timeout: timeout}
 	tr := &http.Transport{
+		DialContext: func(dCtx context.Context, network, addr string) (net.Conn, error) {
+			_, port, err := net.SplitHostPort(addr)
+			if err != nil || port == "" {
+				port = "443"
+			}
+			return dialer.DialContext(dCtx, network, net.JoinHostPort(ip, port))
+		},
 		TLSClientConfig: &tls.Config{
 			ServerName:         host,
 			InsecureSkipVerify: true, // Inspect peer cert directly without failing on origin/default mismatch.
@@ -230,56 +307,14 @@ func probeLiveHost(ctx context.Context, host string, timeout time.Duration) http
 	res := doFastlyHTTPProbe(ctx, client, "https://"+host+"/", host)
 	if res.statusCode > 0 {
 		res.scheme = "https"
-		return res
+		if res.statusCode == http.StatusMisdirectedRequest && !res.certMatch {
+			res.hasFastlyHdr = false
+		} else {
+			return res
+		}
 	}
+
 	httpRes := doFastlyHTTPProbe(ctx, client, "http://"+host+"/", host)
-	if httpRes.statusCode > 0 {
-		httpRes.scheme = "http"
-		return httpRes
-	}
-	return res
-}
-
-func probeDirectEdge(ctx context.Context, host, edgeIP string, timeout time.Duration) httpProbeOutcome {
-	dialer := &net.Dialer{Timeout: timeout}
-	trHTTPS := &http.Transport{
-		DialContext: func(dCtx context.Context, network, _ string) (net.Conn, error) {
-			return dialer.DialContext(dCtx, network, net.JoinHostPort(edgeIP, "443"))
-		},
-		TLSClientConfig: &tls.Config{
-			ServerName:         host,
-			InsecureSkipVerify: true,
-		},
-		DisableKeepAlives: true,
-	}
-	defer trHTTPS.CloseIdleConnections()
-
-	httpsClient := &http.Client{
-		Transport:     trHTTPS,
-		Timeout:       timeout,
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-	}
-
-	res := doFastlyHTTPProbe(ctx, httpsClient, "https://"+host+"/", host)
-	if res.statusCode > 0 {
-		res.scheme = "https"
-		return res
-	}
-
-	trHTTP := &http.Transport{
-		DialContext: func(dCtx context.Context, network, _ string) (net.Conn, error) {
-			return dialer.DialContext(dCtx, network, net.JoinHostPort(edgeIP, "80"))
-		},
-		DisableKeepAlives: true,
-	}
-	defer trHTTP.CloseIdleConnections()
-
-	httpClient := &http.Client{
-		Transport:     trHTTP,
-		Timeout:       timeout,
-		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-	}
-	httpRes := doFastlyHTTPProbe(ctx, httpClient, "http://"+host+"/", host)
 	if httpRes.statusCode > 0 {
 		httpRes.scheme = "http"
 		return httpRes
@@ -330,6 +365,9 @@ func doFastlyHTTPProbe(ctx context.Context, client *http.Client, targetURL, host
 	bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 16384))
 	if strings.Contains(string(bodyBytes), "Fastly error: unknown domain") {
 		out.unknownDomain = true
+	}
+	if out.unknownDomain || (out.statusCode == http.StatusMisdirectedRequest && !out.certMatch) {
+		out.hasFastlyHdr = false
 	}
 	return out
 }

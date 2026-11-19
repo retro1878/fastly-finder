@@ -86,6 +86,16 @@ func LoadRanges(ctx context.Context, client *http.Client, opts RangeOptions) (*R
 		if err != nil {
 			return nil, err
 		}
+		if opts.IncludeBGP {
+			bgpCIDRs, err := fetchRIPEstatFastly(ctx, client)
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			if err == nil && len(bgpCIDRs) > 0 {
+				rs.addStrings(bgpCIDRs)
+				rs.Source += "+ripestat-bgp"
+			}
+		}
 		if opts.IncludeUpcoming {
 			rs.addStrings(upcoming2027CIDRs)
 		}
@@ -129,6 +139,9 @@ func LoadRanges(ctx context.Context, client *http.Client, opts RangeOptions) (*R
 				cidrs = bgpCIDRs
 				source = "ripestat-bgp"
 			} else {
+				if ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
 				if err != nil {
 					errs = append(errs, "ripestat: "+err.Error())
 				}
@@ -151,6 +164,9 @@ func LoadRanges(ctx context.Context, client *http.Client, opts RangeOptions) (*R
 		if bgpCIDRs, err := fetchRIPEstatFastly(ctx, client); err == nil && len(bgpCIDRs) > 0 {
 			rs.addStrings(bgpCIDRs)
 			rs.Source += "+ripestat-bgp"
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
 		}
 	}
 
@@ -345,21 +361,62 @@ func readCachedRanges(path string, maxAge time.Duration) (cachedRanges, bool) {
 	if time.Since(c.FetchedAt) > maxAge || len(c.CIDRs) == 0 {
 		return c, false
 	}
-	return c, true
+	for _, raw := range c.CIDRs {
+		if _, err := netip.ParsePrefix(strings.TrimSpace(raw)); err == nil {
+			return c, true
+		}
+	}
+	return c, false
 }
 
 func writeCachedRanges(path string, c cachedRanges) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+	return writeFileAtomic(path, data, 0o644)
+}
+
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(dir, ".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	cleanup := true
+	defer func() {
+		if cleanup {
+			_ = os.Remove(tmpName)
+		}
+	}()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(perm); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return err
+	}
+	cleanup = false
+	return nil
 }
 
 func httpGetBytes(ctx context.Context, client *http.Client, url string, maxBytes int64) ([]byte, error) {
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 45*time.Second)
+		defer cancel()
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -373,5 +430,12 @@ func httpGetBytes(ctx context.Context, client *http.Client, url string, maxBytes
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("HTTP %d from %s", resp.StatusCode, url)
 	}
-	return io.ReadAll(io.LimitReader(resp.Body, maxBytes))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, fmt.Errorf("response from %s exceeds %d byte limit", url, maxBytes)
+	}
+	return data, nil
 }
